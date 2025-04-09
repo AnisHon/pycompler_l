@@ -1,4 +1,4 @@
-from type import StateType, NodeInfoMap, SymbolType, DFAEdgeType, NodeInfo
+from common.type import StateType, NodeInfoMap, SymbolType, DFAEdgeType, NodeInfo
 
 class DFA:
     def __init__(self):
@@ -50,9 +50,8 @@ class DFA:
         return self.edges[k]
 
 
-
-
 if __name__ == "__main__":
+    # todo 测试代码
     dfa = DFA()
     dfa.add_node(0)
     dfa.add_node(2)
@@ -64,13 +63,18 @@ if __name__ == "__main__":
     dfa.add_edge(2,  1, 'c')
 
 
-    s = "aaabc"
+    s = "aaabcaaaaaaaaaaaaabc"
 
-    print(dfa.edges)
+    # print(dfa.edges)
 
-    state = 0
-    for item in s:
-        state = dfa.translate_to(state, item)
-        print(state, end=' ')
+
+    state: int = 0
+    last_state = 0
+    last_state_pos = 0
+    beg = 0
+    i = 0
+
+
+
 
 
