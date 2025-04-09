@@ -1,4 +1,6 @@
-from type import StateType, NodeInfoMap, SymbolType, NodeInfo, NFAEdgeType, EPSILON
+from common.IdGenerator import id_generator
+from common.type import StateType, NodeInfoMap, SymbolType, NodeInfo, NFAEdgeType, EPSILON
+
 
 
 class NFA:
@@ -47,13 +49,11 @@ class NFA:
         else :
             raise RuntimeError("Unknown dest type: " + str(dest))
 
-
     def translate_to(self, node: StateType, edge: SymbolType) -> set[StateType] | None:
         k = (node, edge)
         if k not in self.edges:
             return None
         return self.edges[k]
-
 
     def closure(self, nodes: set[StateType]) -> set[StateType]:
         """
@@ -96,7 +96,76 @@ class NFA:
 
         return result
 
-if __name__ == "__main__":
+    def concat(self, new_nfa: 'NFA'):
+        """
+        拼接两个DFA，包括边和节点
+        :param new_nfa:
+        :return:
+        """
+        self.nodes.update(new_nfa.nodes)
+        self.edges.update(new_nfa.edges)
+
+
+
+def __translate_recursion(reg_text: str, pos: int, beg_state: StateType, generator) -> tuple[NFA, StateType]:
+
+    nfa = NFA()
+
+
+
+
+
+
+def __priority(op1, op2):
+    """
+    返回-1 0 1 op1 < op2 op1 = op2 op1 > op2
+    :param op1:
+    :param op2:
+    :return:
+    """
+    # prior_matrix = {
+    #     '(': {'(': -1,'[': -1,'|': 1, '*': 1, 'x': 1, ')': 0, ']': 0},
+    #     '[': {'(': 0,'[': 0,'|': 0, '*': 0, 'x': 0, ')': 0, ']': 0},
+    #     '|': {'(': 0,'[': 0,'|': 0, '*': 0, 'x': 0, ')': 0, ']': 0},
+    #     '*': {'(': 0,'[': 0,'|': 0, '*': 0, 'x': 0, ')': 0, ']': 0},
+    #     'x': {'(': 0,'[': 0,'|': 0, '*': 0, 'x': 0, ')': 0, ']': 0},
+    #     ')': {'(': 0,'[': 0,'|': 0, '*': 0, 'x': 0, ')': 0, ']': 0},
+    #     ']': {'(': 0,'[': 0,'|': 0, '*': 0, 'x': 0, ')': 0, ']': 0},
+    # }
+
+
+# def __calc()
+
+#
+# def translate_to_nfa(reg_text: str):
+#     char_stack = []
+#     op_stack = []
+#
+#
+#     for c in reg_text:
+#         if c == '(' or c == '[':
+#             op_stack.append(c)
+#         elif c == ')':
+#             pass
+#         elif c == ']':
+#             pass
+#         elif c == '|'  or c == '*':
+#             if
+#             char_stack.append(c)
+#             pass
+#         else:
+#             char_stack.append(c)
+#             if len(char_stack) > 0:
+#                 op_stack.append('X')
+#
+#
+#
+#
+#     pass
+
+
+def test_nfa():
+    # todo 测试代码
     nfa = NFA()
     nfa.add_node(0)
     nfa.add_node(1)
@@ -120,3 +189,17 @@ if __name__ == "__main__":
     print(nfa.closure({1}))
     print(nfa.closure({2}))
     print(nfa.dfa_edge({3, 2}, 'a'))
+
+    s1 = {3, 1, 2}
+    s2 = set()
+    s2.add(3)
+    print(s2)
+    s2.add(1)
+    print(s2)
+    s2.add(2)
+    print(s2)
+    print(s1)
+
+
+    d = {frozenset(s1): "114514"}
+    print(d[frozenset(s2)])
