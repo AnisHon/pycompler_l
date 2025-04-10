@@ -1,3 +1,8 @@
+# @encoding: utf-8
+# @author: anishan
+# @date: 2025/04/09
+# @description: DFA简单实现，也许以后用线段树实现
+
 from common.replace_util import ReplaceUtil
 from common.type import StateType, NodeInfoMap, SymbolType, NodeInfo, NFAEdgeType, EPSILON
 
@@ -78,7 +83,7 @@ class NFA:
             return None
         return self.edges[k]
 
-    def closure(self, nodes: set[StateType]) -> set[StateType]:
+    def closure(self, nodes: frozenset[StateType] | set[StateType]) -> set[StateType]:
         """
         epsilon闭包运算(ε-closure)
         :param nodes:
@@ -104,7 +109,7 @@ class NFA:
         return result
 
 
-    def dfa_edge(self, nodes: set[StateType], edge: SymbolType) -> set[StateType]:
+    def dfa_edge(self, nodes: frozenset[StateType] | set[StateType], edge: SymbolType) -> set[StateType]:
         """
         《现代编译原理》管这个弧转叫DFAEdge
         :param nodes: 参与弧度转的节点
@@ -118,6 +123,16 @@ class NFA:
                 result |= t_nodes
 
         return result
+
+    def kleene_closure(self, nodes: frozenset[StateType] | set[StateType], edge: SymbolType) -> set[StateType]:
+        """
+        kleene closure, I_a = ε-closure(J)
+        :param nodes: 'I' set
+        :param edge: 'a' transition
+        :return: 'I_a' set
+        """
+        j = self.dfa_edge(nodes, edge)
+        return self.closure(j)
 
     def concat(self, new_nfa: 'NFA'):
         """

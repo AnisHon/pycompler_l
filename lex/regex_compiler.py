@@ -1,11 +1,18 @@
+# @encoding: utf-8
+# @author: anishan
+# @date: 2025/04/10
+# @description: 正则表达式编译，负责正则->NFA 和 NFA->DFA 以及 DFA简化
 import codecs
+from collections import deque
 
 from common.IdGenerator import id_generator
 from common.type import EPSILON, SymbolType, NodeInfo
+from lex.dfa import DFA
 from lex.nfa import NFA
 import re
 from enum import Enum, auto
 from typing import List, Tuple
+
 
 class TokenType(Enum):
     CHAR = auto()
@@ -98,6 +105,7 @@ class RegexCompiler:
 
     @staticmethod
     def lex_regex(pattern: str) -> List[Token]:
+        # todo 转义符不好用，回头直接在这里处理转义符
         tokens = []
         pos = 0
         while pos < len(pattern):
@@ -181,8 +189,13 @@ class RegexCompiler:
 
     def __do_calc_alter(self) -> None:
         nfa = NFA()
-        beg1, nfa1, end1 = self._calc_stack.pop()
-        beg2, nfa2, end2 = self._calc_stack.pop()
+
+        try:
+            beg1, nfa1, end1 = self._calc_stack.pop()
+            beg2, nfa2, end2 = self._calc_stack.pop()
+        except IndexError:
+            raise RuntimeError("")
+
         nfa.concat(nfa1)
         nfa.concat(nfa2)
 
@@ -191,12 +204,6 @@ class RegexCompiler:
         nfa.add_nodes(beg, end)
 
         nfa.add_edges((beg, beg1, EPSILON), (beg, beg2, EPSILON), (end1, end, EPSILON), (end2, end, EPSILON))
-
-        # nfa.add_edge(beg, beg1)
-        # nfa.add_edge(beg, beg2)
-        #
-        # nfa.add_edge(end1, end)
-        # nfa.add_edge(end2, end)
 
         self._calc_stack.append((beg, nfa, end))
 
@@ -216,11 +223,6 @@ class RegexCompiler:
             op = self._op_stack.pop()
 
 
-    #
-    # def __handle_left_lparen(self):
-    #     # ...((...)...)这是唯一能出现这种情况的语句后面会把他弹出去
-    #     pass
-
 
     def __handle_operator(self, curr_op_typ):
         """
@@ -229,7 +231,10 @@ class RegexCompiler:
         """
         # while len(self._op_stack) >0
         if curr_op_typ == TokenType.RPAREN: # we got ) here, time to calculate all symbol between parent
-            self.__handle_left_rparen()
+            try:
+                self.__handle_left_rparen()
+            except IndexError:
+                raise RuntimeError("括号不匹配")
             return
         elif len(self._op_stack) == 0:       # no operations here, push in
             self._op_stack.append(curr_op_typ)
@@ -265,13 +270,13 @@ class RegexCompiler:
         for tok in tokens:
             tok_type, tok_val = tok
 
+
             if tok_type == TokenType.CHAR:
                 self.__build_char_nfa(tok_val)
             elif tok_type == TokenType.ESCAPE:
                 self.__build_escape_nfa(tok_val)
             elif tok_type == TokenType.CHAR_CLASS:
                 self.__build_char_class_nfa(tok_val)
-
             else:
                 self.__handle_operator(tok_type)
 
@@ -303,10 +308,130 @@ class RegexCompiler:
 
 
 
+class N2FConvertor:
+    """
+    NFA to DFA Convertor
+    """
+
+    def __init_state_table(self):
+        for edge in self.nfa.edges:
+            state, symbol = edge
+
+
+            ele = self.__state_table.get(state, set())
+            ele.add(symbol)
+            self.__state_table[state] = ele
+
+
+        for node in self.nfa.nodes:
+            self.__state_table[node] = self.__state_table.get(node, set())
+
+        # print(self.__state_table)
+
+
+    def __initialize(self):
+        self.__init_state_table()
+
+        self.__closure_queue: deque[frozenset[int]] = deque()
+        for state in self.__state_table:
+            closure_set = frozenset(self.nfa.closure({state}))
+            self.__closure_queue.append(closure_set)
+
+    def __init__(self, nfa: NFA, origin: int):
+        self.nfa: NFA = nfa
+        self.__state_table: dict[int, set[SymbolType]] = {}
+        self.__translate_table: dict[tuple[frozenset[int], SymbolType], frozenset[int]] = {} # 转移表，表示k闭包后的转移情况
+
+        self.__initialize()
+
+        self.origin = origin
+
+
+    def __get_connected(self, states: frozenset[int]):
+        connected_edge = set()
+        for item in states:
+            connected_edge.update(self.__state_table[item])
+        return connected_edge
+
+
+
+
+    def __kleene_calc(self, state: frozenset[int]):
+        connected_edge = self.__get_connected(state)
+        new_states = set()
+        for edge in connected_edge:
+            connected = frozenset(self.nfa.kleene_closure(state, edge))
+            self.__translate_table[(state, edge)] = connected
+            new_states.add(connected)
+
+        for item in new_states:
+            self.__closure_queue.append(item)
+
+    @staticmethod
+    def __build_id_map(finished_state):
+        state_id_map = {}
+        generator = id_generator()
+
+
+        for state in finished_state:
+            state_id_map[state] = next(generator)
+        return state_id_map
+
+    def __build_dfa(self, state_id_map):
+        dfa = DFA()
+        for state in state_id_map:
+            state_id = state_id_map[state]
+            accept = False
+            for node in state:
+                if self.nfa.nodes[node].accept:
+                    accept = True
+                    break
+
+            dfa.add_node(state_id, accept=accept)
+
+        for item in self.__translate_table:
+            origin, edge = item
+            dest = self.__translate_table[item]
+
+            origin_id = state_id_map[origin]
+            dest_id = state_id_map[dest]
+
+            dfa.add_edge(origin_id, dest_id, edge)
+
+        return dfa
+
+
+
+
+    def convert(self):
+        finished_state = set()
+        while len(self.__closure_queue) > 0:
+            state = self.__closure_queue.popleft()
+
+            if state in finished_state:
+                continue
+
+            self.__kleene_calc(state)
+            finished_state.add(state)
+
+
+        state_id_map = N2FConvertor.__build_id_map(finished_state)
+        dfa = self.__build_dfa(state_id_map)
+        origin_state = state_id_map[frozenset(self.nfa.closure({self.origin}))]
+
+        return origin_state, dfa
+
+
+
+
+
+
+
+
 # if __name__ == '__main__':
     # # print("".join(map(lambda x: x[1], RegexCompiler.lex_regex("a|b(a|b|c)*d[a-c]"))))
     # # print(TokenType.priority(TokenType.AND, TokenType.AND))
-    # regex_compiler = RegexCompiler()
-    # nfa = regex_compiler.compile("(ab|cd)*abc[ab]")
+
+
     # print(nfa[1].nodes)
     # nfa[1].print_edge()

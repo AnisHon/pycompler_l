@@ -1,3 +1,8 @@
+# @encoding: utf-8
+# @author: anishan
+# @date: 2025/04/09
+# @description: DFA简单实现，也许以后用线段树实现
+
 from common.type import StateType, NodeInfoMap, SymbolType, DFAEdgeType, NodeInfo
 
 class DFA:
