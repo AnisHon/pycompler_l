@@ -314,6 +314,9 @@ class N2FConvertor:
     """
 
     def __init_state_table(self):
+        """
+        this function builds a table associating state with translation symbol(edge)
+        """
         for edge in self.nfa.edges:
             state, symbol = edge
 
@@ -330,6 +333,9 @@ class N2FConvertor:
 
 
     def __initialize(self):
+        """
+        this function initializes calculation queue (with ε-closure(q))
+        """
         self.__init_state_table()
 
         self.__closure_queue: deque[frozenset[int]] = deque()
@@ -348,6 +354,10 @@ class N2FConvertor:
 
 
     def __get_connected(self, states: frozenset[int]):
+        """
+        this function gets all connected edges(symbol) from set states
+        :param states: states set
+        """
         connected_edge = set()
         for item in states:
             connected_edge.update(self.__state_table[item])
@@ -357,18 +367,27 @@ class N2FConvertor:
 
 
     def __kleene_calc(self, state: frozenset[int]):
+        """
+        calculate kleene closure, meanwhile add new combination of states into queue
+        :param state: multi nfa states correspond to a nfa state
+        """
         connected_edge = self.__get_connected(state)
         new_states = set()
-        for edge in connected_edge:
+        for edge in connected_edge:     # foreach edges(symbols), calculate kleene_closure, fill into transition_table
             connected = frozenset(self.nfa.kleene_closure(state, edge))
             self.__translate_table[(state, edge)] = connected
             new_states.add(connected)
 
-        for item in new_states:
+        for item in new_states:         # add new state into queue
             self.__closure_queue.append(item)
 
     @staticmethod
     def __build_id_map(finished_state):
+        """
+        this function builds a state-id mapping(dict)
+        :param finished_state:
+        :return: this dict
+        """
         state_id_map = {}
         generator = id_generator()
 
@@ -378,8 +397,13 @@ class N2FConvertor:
         return state_id_map
 
     def __build_dfa(self, state_id_map):
+        """
+        this function is responsible for building dfa relying on transition_map
+        :param state_id_map: state-id map
+        :return: dfa
+        """
         dfa = DFA()
-        for state in state_id_map:
+        for state in state_id_map:          # foreach state_id_map add into dfa
             state_id = state_id_map[state]
             accept = False
             for node in state:
@@ -389,7 +413,7 @@ class N2FConvertor:
 
             dfa.add_node(state_id, accept=accept)
 
-        for item in self.__translate_table:
+        for item in self.__translate_table:     # (origin, symbol) -> dest
             origin, edge = item
             dest = self.__translate_table[item]
 
@@ -404,20 +428,25 @@ class N2FConvertor:
 
 
     def convert(self):
-        finished_state = set()
+        """
+        convert nfa into dfa
+        :return: (origin state, dfa)
+        """
+
+        finished_state = set()  # to prevent duplicate calculations, and convenient for build state-id map
         while len(self.__closure_queue) > 0:
             state = self.__closure_queue.popleft()
 
-            if state in finished_state:
+            if state in finished_state:  # already calculated, skip
                 continue
 
-            self.__kleene_calc(state)
+            self.__kleene_calc(state)    # closure
             finished_state.add(state)
 
 
-        state_id_map = N2FConvertor.__build_id_map(finished_state)
+        state_id_map = N2FConvertor.__build_id_map(finished_state)  # state-id map
         dfa = self.__build_dfa(state_id_map)
-        origin_state = state_id_map[frozenset(self.nfa.closure({self.origin}))]
+        origin_state = state_id_map[frozenset(self.nfa.closure({self.origin}))] # origin_state closure(origin_state)
 
         return origin_state, dfa
 
