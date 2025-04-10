@@ -12,13 +12,13 @@ from graphviz import Digraph
 
 
 class TestLex(unittest.TestCase):
-    # def test_compile(self):
-    #     # print("".join(map(lambda x: x[1], RegexCompiler.lex_regex("a|b(a|b|c)*d[a-c]"))))
-    #     # print(TokenType.priority(TokenType.AND, TokenType.AND))
-    #     regex_compiler = RegexCompiler()
-    #     nfa = regex_compiler.compile("(ab|cd)*abc[a-b] [123kasdfasdf]")
-    #     # print(nfa[1].nodes)
-    #     nfa[1].print_edge()
+    def test_compile(self):
+        # print("".join(map(lambda x: x[1], RegexCompiler.lex_regex("a|b(a|b|c)*d[a-c]"))))
+        # print(TokenType.priority(TokenType.AND, TokenType.AND))
+        regex_compiler = RegexCompiler()
+        nfa = regex_compiler.compile("(ab|cd)*abc[a-b] [123kasdfasdf]")
+        # print(nfa[1].nodes)
+        nfa[1].print_edge()
 
 
 
@@ -55,12 +55,12 @@ class TestLex(unittest.TestCase):
         nfa_p.render('nfa', view=True, cleanup=True)
 
 
-    # def test_n2d_convertor(self):
-    #     regex_compiler = RegexCompiler()
-    #     nfa = regex_compiler.compile("(ab|cd)*abc[ab]")
-    #     cvt = N2FConvertor(nfa[1], nfa[0])
-    #     dfa = cvt.convert()[1]
-    #     print(dfa.edges)
+    def test_n2d_convertor(self):
+        regex_compiler = RegexCompiler()
+        nfa = regex_compiler.compile("(ab|cd)*abc[ab]")
+        cvt = N2FConvertor(nfa[1], nfa[0])
+        dfa = cvt.convert()[1]
+        print(dfa.edges)
 
     def test_draw_dfa_picture(self):
         regex_compiler = RegexCompiler()

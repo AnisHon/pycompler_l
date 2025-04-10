@@ -1,0 +1,4 @@
+__test__/*.png
+__test__/*.gv
+__test__/nfa
+__test__/dfa
