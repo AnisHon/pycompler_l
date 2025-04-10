@@ -53,33 +53,3 @@ class DFA:
         if k not in self.edges:
             return None
         return self.edges[k]
-
-
-if __name__ == "__main__":
-    # todo 测试代码
-    dfa = DFA()
-    dfa.add_node(0)
-    dfa.add_node(2)
-    dfa.add_node(1, accept=True)
-    dfa.add_edge(0,  2, 'a')
-    dfa.add_edge(0,  2, 'b')
-    dfa.add_edge(2,  2, 'a')
-    dfa.add_edge(2,  2, 'b')
-    dfa.add_edge(2,  1, 'c')
-
-
-    s = "aaabcaaaaaaaaaaaaabc"
-
-    # print(dfa.edges)
-
-
-    state: int = 0
-    last_state = 0
-    last_state_pos = 0
-    beg = 0
-    i = 0
-
-
-
-
-

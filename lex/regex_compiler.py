@@ -94,18 +94,44 @@ class RegexCompiler:
     __master_pattern = None
     __master_re = None
 
-    def __init__(self):
-        self.__generator = id_generator()
+    def __init__(self, generator = None):
+
+        generator = id_generator() if generator is None else generator
+
+        self.__generator = generator
         self._op_stack: list[TokenType] = []
         self._calc_stack: list[tuple[int, NFA, int]] = []
         RegexCompiler.__master_pattern = '|'.join(f'(?P<{tok.name}>{pat})' for tok, pat in RegexCompiler.__token_specs) # why tok, pat can be exposed to outside?
         RegexCompiler.__master_re = re.compile(RegexCompiler.__master_pattern)
         # self.do
 
+    @staticmethod
+    def handle_escape(tokens):
+        i = 0
+        esc_char = set("()[]{}*|")
+        while i < len(tokens):
+            item = tokens[i]
+            if item[0] != TokenType.ESCAPE:
+                i += 1
+                continue
+
+            val = item[1][1:]
+            if val not in esc_char:
+                val = codecs.decode(val, 'unicode-escape')
+
+            tokens[i] = (TokenType.CHAR, val)
+            i += 1
+
+
+
+
+
+
+
 
     @staticmethod
     def lex_regex(pattern: str) -> List[Token]:
-        # todo 转义符不好用，回头直接在这里处理转义符
+        # todo 以后把他变成自己写的dfa
         tokens = []
         pos = 0
         while pos < len(pattern):
@@ -117,8 +143,11 @@ class RegexCompiler:
             tokens.append((TokenType[typ], val))
             pos = m.end()
 
+        RegexCompiler.handle_escape(tokens)
+
         result = []
         is_char = False
+
         for item in tokens:
             typ, val = item
 
@@ -146,10 +175,6 @@ class RegexCompiler:
         nfa.add_edge(start, end, edge)
 
         self._calc_stack.append((start, nfa, end))
-
-    def __build_escape_nfa(self, val):
-        val = codecs.decode(val, 'unicode-escape')
-        self.__build_char_nfa(val)
 
     def __build_char_class_nfa(self, tok_val) -> None:
 
@@ -273,8 +298,6 @@ class RegexCompiler:
 
             if tok_type == TokenType.CHAR:
                 self.__build_char_nfa(tok_val)
-            elif tok_type == TokenType.ESCAPE:
-                self.__build_escape_nfa(tok_val)
             elif tok_type == TokenType.CHAR_CLASS:
                 self.__build_char_class_nfa(tok_val)
             else:
@@ -303,6 +326,7 @@ class RegexCompiler:
         :return: (origin state, nfa, terminal state)
         """
         tokens = RegexCompiler.lex_regex(regex)
+        # print(tokens)
         return self.__analysis(tokens)
 
 
