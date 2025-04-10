@@ -4,30 +4,31 @@
 # @description: 测试用，有NFA转移表打印测试，NFA图测试
 import unittest
 
-
+from graphviz import Digraph
 from common.replace_util import ReplaceUtil
 from common.type import EPSILON
 from lex.regex_compiler import RegexCompiler, N2FConvertor
-from graphviz import Digraph
+
+reg = "cnm|nmsl"
 
 
-class TestLex(unittest.TestCase):
-    def test_compile(self):
-        # print("".join(map(lambda x: x[1], RegexCompiler.lex_regex("a|b(a|b|c)*d[a-c]"))))
-        # print(TokenType.priority(TokenType.AND, TokenType.AND))
-        regex_compiler = RegexCompiler()
-        nfa = regex_compiler.compile("(ab|cd)*abc[a-b] [123kasdfasdf]")
-        # print(nfa[1].nodes)
-        nfa[1].print_edge()
+class TestRegexCompiler(unittest.TestCase):
+    # def test_compile(self):
+    #     # print("".join(map(lambda x: x[1], RegexCompiler.lex_regex("a|b(a|b|c)*d[a-c]"))))
+    #     # print(TokenType.priority(TokenType.AND, TokenType.AND))
+    #     regex_compiler = RegexCompiler()
+    #     nfa = regex_compiler.compile("(ab|cd)*abc[a-b] [123kasdfasdf]")
+    #     # print(nfa[1].nodes)
+    #     nfa[1].print_edge()
 
 
 
     def test_draw_nfa_picture(self):
 
         regex_compiler = RegexCompiler()
-        com_nfa = regex_compiler.compile("(ab|cd)*abc[ab]")
+        com_nfa = regex_compiler.compile(reg)
         nfa = com_nfa[1]
-        nfa_p = Digraph(format='png')
+        nfa_p = Digraph(filename="nfa", format='png')
 
         nfa_p.render()
         for item in nfa.nodes:
@@ -52,25 +53,25 @@ class TestLex(unittest.TestCase):
                 nfa_p.edge(str(origin), str(dest), label=label)
 
         nfa_p.attr(rankdir='LR')
-        nfa_p.render('nfa', view=True, cleanup=True)
+        nfa_p.render(view=True, cleanup=True)
 
 
-    def test_n2d_convertor(self):
-        regex_compiler = RegexCompiler()
-        nfa = regex_compiler.compile("(ab|cd)*abc[ab]")
-        cvt = N2FConvertor(nfa[1], nfa[0])
-        dfa = cvt.convert()[1]
-        print(dfa.edges)
+    # def test_n2d_convertor(self):
+    #     regex_compiler = RegexCompiler()
+    #     nfa = regex_compiler.compile("(ab|cd)*abc[ab]")
+    #     cvt = N2FConvertor(nfa[1], nfa[0])
+    #     dfa = cvt.convert()[1]
+    #     print(dfa.edges)
 
     def test_draw_dfa_picture(self):
         regex_compiler = RegexCompiler()
-        nfa = regex_compiler.compile("(ab|cd)*abc[ab]")
+        nfa = regex_compiler.compile(reg)
         cvt = N2FConvertor(nfa[1], nfa[0])
         cvt_dfa = cvt.convert()
 
 
         dfa = cvt_dfa[1]
-        dfa_p = Digraph(format='png')
+        dfa_p = Digraph(filename='dfa', format='png')
 
         for item in dfa.nodes:
             node = dfa.nodes[item]
@@ -92,4 +93,4 @@ class TestLex(unittest.TestCase):
             dfa_p.edge(str(origin), str(dfa.edges[edge]), label=label)
 
         dfa_p.attr(rankdir='LR')
-        dfa_p.render('dfa', view=True, cleanup=True)
+        dfa_p.render(view=True, cleanup=True)

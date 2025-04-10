@@ -320,7 +320,8 @@ class N2FConvertor:
         for edge in self.nfa.edges:
             state, symbol = edge
 
-
+            if symbol == EPSILON:     # remove epsilon edge
+                continue
             ele = self.__state_table.get(state, set())
             ele.add(symbol)
             self.__state_table[state] = ele
@@ -329,34 +330,41 @@ class N2FConvertor:
         for node in self.nfa.nodes:
             self.__state_table[node] = self.__state_table.get(node, set())
 
+
         # print(self.__state_table)
 
 
     def __initialize(self):
         """
-        this function initializes calculation queue (with ε-closure(q))
+        this function initializes calculation queue (with origin_closure)
         """
         self.__init_state_table()
 
         self.__closure_queue: deque[frozenset[int]] = deque()
-        for state in self.__state_table:
-            closure_set = frozenset(self.nfa.closure({state}))
-            self.__closure_queue.append(closure_set)
+
+        self.__closure_queue.append(self.__origin_closure)  # add initial element
+
+
+
+
 
     def __init__(self, nfa: NFA, origin: int):
         self.nfa: NFA = nfa
         self.__state_table: dict[int, set[SymbolType]] = {}
         self.__translate_table: dict[tuple[frozenset[int], SymbolType], frozenset[int]] = {} # 转移表，表示k闭包后的转移情况
 
+        self.origin = origin
+        self.__origin_closure = frozenset(self.nfa.closure({self.origin}))
+
         self.__initialize()
 
-        self.origin = origin
+
 
 
     def __get_connected(self, states: frozenset[int]):
         """
         this function gets all connected edges(symbol) from set states
-        :param states: states set
+        :param states:  set
         """
         connected_edge = set()
         for item in states:
@@ -381,6 +389,8 @@ class N2FConvertor:
         for item in new_states:         # add new state into queue
             self.__closure_queue.append(item)
 
+
+
     @staticmethod
     def __build_id_map(finished_state):
         """
@@ -394,7 +404,10 @@ class N2FConvertor:
 
         for state in finished_state:
             state_id_map[state] = next(generator)
+
+        # print(state_id_map)
         return state_id_map
+
 
     def __build_dfa(self, state_id_map):
         """
@@ -406,12 +419,14 @@ class N2FConvertor:
         for state in state_id_map:          # foreach state_id_map add into dfa
             state_id = state_id_map[state]
             accept = False
-            for node in state:
+            meta = None
+            for node in state:              # if it has terminated state, inherit its attribute
                 if self.nfa.nodes[node].accept:
                     accept = True
+                    meta = self.nfa.nodes[node].meta
                     break
 
-            dfa.add_node(state_id, accept=accept)
+            dfa.add_node(state_id, accept=accept, meta=meta)
 
         for item in self.__translate_table:     # (origin, symbol) -> dest
             origin, edge = item
@@ -446,7 +461,7 @@ class N2FConvertor:
 
         state_id_map = N2FConvertor.__build_id_map(finished_state)  # state-id map
         dfa = self.__build_dfa(state_id_map)
-        origin_state = state_id_map[frozenset(self.nfa.closure({self.origin}))] # origin_state closure(origin_state)
+        origin_state = state_id_map[self.__origin_closure] # origin_state closure(origin_state)
 
         return origin_state, dfa
 
