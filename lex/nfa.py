@@ -1,9 +1,12 @@
-from common.IdGenerator import id_generator
+from common.replace_util import ReplaceUtil
 from common.type import StateType, NodeInfoMap, SymbolType, NodeInfo, NFAEdgeType, EPSILON
 
 
 
 class NFA:
+    """
+    Simple NFA(Non-determined Finity Automatic) implementation
+    """
     def __init__(self):
         self.__nodes: NodeInfoMap = {}
         self.__edges: NFAEdgeType = {}
@@ -26,14 +29,18 @@ class NFA:
         """
         self.nodes[node] = NodeInfo(accept=accept, label=label, meta=meta)
 
-    def add_edge(self, origin: StateType, dest: StateType | set[StateType] | list[StateType], edge: SymbolType) -> None:
+    def add_nodes(self, *nodes: StateType):
+        for node in nodes:
+            self.add_node(node)
+
+
+    def add_edge(self, origin: StateType, dest: StateType | set[StateType] | list[StateType], edge: SymbolType = EPSILON) -> None:
         """
-        添加边（转移）
+        add transition(edge)
         :param origin: 初始节点（状态）
         :param dest: 目标节点（状态）
-        :param edge: 边字符（转移）
+        :param edge: 边字符（转移）,默认空转移
         """
-
         if origin not in self.nodes:
             node = dest if origin not in self.nodes else origin
             raise RuntimeError("Unknown node: " + str(node))
@@ -42,12 +49,28 @@ class NFA:
         if k not in self.edges:
             self.edges[k] = set()
 
+        # I know this place looks terrible, but it works
+        # if python had overload, everything would be better
         if isinstance(dest, StateType):
+            if dest not in self.nodes:
+                raise RuntimeError("Unknown node: " + str(dest))
+
             self.edges[k].add(dest)
+
         elif isinstance(dest, set) or isinstance(dest, list):
+            if len(dest - self.nodes.keys()) != 0:
+                raise RuntimeError("Unknown node: " + str(dest))
+
             self.edges[k].update(dest)
         else :
             raise RuntimeError("Unknown dest type: " + str(dest))
+
+    def add_edges(self, *edges: tuple[StateType, StateType, SymbolType]):
+        for edge in edges:
+            origin = edge[0]
+            dest = edge[1]
+            edge = edge[2]
+            self.add_edge(origin, dest, edge)
 
     def translate_to(self, node: StateType, edge: SymbolType) -> set[StateType] | None:
         k = (node, edge)
@@ -57,7 +80,7 @@ class NFA:
 
     def closure(self, nodes: set[StateType]) -> set[StateType]:
         """
-        epsilon闭包运算
+        epsilon闭包运算(ε-closure)
         :param nodes:
         :return:
         """
@@ -105,63 +128,18 @@ class NFA:
         self.nodes.update(new_nfa.nodes)
         self.edges.update(new_nfa.edges)
 
+    def print_edge(self):
+        print(f"{'Origin':<10}{'Symbol':<10}{'Dest'}")
+        for edge in self.edges:
+            symbol = ReplaceUtil()\
+                .add_replace('ε', "'ε'")\
+                .add_replace(EPSILON, 'ε')\
+                .add_replace(' ', "' '")\
+                .replace(edge[1])
 
+            # print(ord(symbol))
+            print(f"{edge[0]:<10}{symbol:<10}{','.join(map(lambda x: str(x), self.edges[edge]))}")
 
-def __translate_recursion(reg_text: str, pos: int, beg_state: StateType, generator) -> tuple[NFA, StateType]:
-
-    nfa = NFA()
-
-
-
-
-
-
-def __priority(op1, op2):
-    """
-    返回-1 0 1 op1 < op2 op1 = op2 op1 > op2
-    :param op1:
-    :param op2:
-    :return:
-    """
-    # prior_matrix = {
-    #     '(': {'(': -1,'[': -1,'|': 1, '*': 1, 'x': 1, ')': 0, ']': 0},
-    #     '[': {'(': 0,'[': 0,'|': 0, '*': 0, 'x': 0, ')': 0, ']': 0},
-    #     '|': {'(': 0,'[': 0,'|': 0, '*': 0, 'x': 0, ')': 0, ']': 0},
-    #     '*': {'(': 0,'[': 0,'|': 0, '*': 0, 'x': 0, ')': 0, ']': 0},
-    #     'x': {'(': 0,'[': 0,'|': 0, '*': 0, 'x': 0, ')': 0, ']': 0},
-    #     ')': {'(': 0,'[': 0,'|': 0, '*': 0, 'x': 0, ')': 0, ']': 0},
-    #     ']': {'(': 0,'[': 0,'|': 0, '*': 0, 'x': 0, ')': 0, ']': 0},
-    # }
-
-
-# def __calc()
-
-#
-# def translate_to_nfa(reg_text: str):
-#     char_stack = []
-#     op_stack = []
-#
-#
-#     for c in reg_text:
-#         if c == '(' or c == '[':
-#             op_stack.append(c)
-#         elif c == ')':
-#             pass
-#         elif c == ']':
-#             pass
-#         elif c == '|'  or c == '*':
-#             if
-#             char_stack.append(c)
-#             pass
-#         else:
-#             char_stack.append(c)
-#             if len(char_stack) > 0:
-#                 op_stack.append('X')
-#
-#
-#
-#
-#     pass
 
 
 def test_nfa():
