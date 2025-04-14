@@ -1,5 +1,5 @@
 StateType = int
-SymbolType = str
+SymbolType = str | int
 
 # 空
 EPSILON = ""

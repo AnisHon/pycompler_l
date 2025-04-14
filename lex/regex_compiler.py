@@ -3,15 +3,15 @@
 # @date: 2025/04/10
 # @description: 正则表达式编译，负责正则->NFA 和 NFA->DFA 以及 DFA简化
 import codecs
+import re
 from collections import deque
+from enum import Enum, auto
 
 from common.IdGenerator import id_generator
-from common.type import EPSILON, SymbolType, NodeInfo
+from common.range_map import RangeMap
+from common.type import EPSILON, SymbolType
 from lex.dfa import DFA
 from lex.nfa import NFA
-import re
-from enum import Enum, auto
-from typing import List, Tuple
 
 
 class TokenType(Enum):
@@ -75,8 +75,9 @@ class TokenType(Enum):
             raise RuntimeError(f"Impossible Sequence {op1.name} {op2.name}")
 
 
+
 class RegexCompiler:
-    Token = Tuple[TokenType, str]
+    Token = tuple[TokenType, str | set | int]
     # 正则表达式 -> token 规则
     __token_specs = [
         (TokenType.ESCAPE, r'\\.'),  # 转义字符，如 \*、\(
@@ -96,6 +97,7 @@ class RegexCompiler:
 
     def __init__(self, generator = None):
 
+        self.__range_map = None
         generator = id_generator() if generator is None else generator
 
         self.__generator = generator
@@ -122,15 +124,52 @@ class RegexCompiler:
             tokens[i] = (TokenType.CHAR, val)
             i += 1
 
+    @staticmethod
+    def build_map(tokens):
+        range_map = RangeMap()
+
+        for typ, val in tokens:
+            if typ == TokenType.CHAR:
+                range_map.insert(ord(val), ord(val) + 1)
+            elif typ == TokenType.CHAR_CLASS:
+
+                if len(val) == 5 and val[2] == '-':
+                    range_map.insert(ord(val[1]), ord(val[3]) + 1)
+                else:
+                    for c in val[1:-1]: range_map.insert(ord(c), ord(c) + 1)
+
+        generator = id_generator()
+        def func(root, left, right):
+            root.meta = next(generator)
 
 
+        range_map.dfs(ldr_handler=func)
 
+        return range_map
+
+    @staticmethod
+    def toke2class(range_map: RangeMap, tokens):
+        idx = 0
+        while idx < len(tokens):
+            typ, val = tokens[idx]
+            if typ == TokenType.CHAR:
+                tokens[idx] = (TokenType.CHAR, range_map.search(val).meta)
+            elif typ == TokenType.CHAR_CLASS:
+                if len(val) == 5 and val[2] == '-':
+                    beg = range_map.search(val[1]).meta
+                    end = range_map.search(val[4]).meta
+                    tokens[idx] = (TokenType.CHAR, range(beg, end + 1))
+                else:
+                    char_classes = set([range_map.search(val).meta for val in val[1:-1]])
+                    tokens[idx] = (TokenType.CHAR, char_classes)
+
+            idx += 1
 
 
 
 
     @staticmethod
-    def lex_regex(pattern: str) -> List[Token]:
+    def lex_regex(pattern: str) -> tuple[list, RangeMap]:
         # todo 以后把他变成自己写的dfa
         tokens = []
         pos = 0
@@ -144,7 +183,8 @@ class RegexCompiler:
             pos = m.end()
 
         RegexCompiler.handle_escape(tokens)
-
+        range_map = RegexCompiler.build_map(tokens)
+        # RegexCompiler.to_char_class(range_map, tokens) todo open this comment
         result = []
         is_char = False
 
@@ -153,7 +193,7 @@ class RegexCompiler:
 
             if is_char and (typ == TokenType.CHAR or typ == TokenType.LPAREN or typ == TokenType.CHAR_CLASS):
                 result.append((TokenType.AND, 'X'))
-                is_char = False
+                # is_char = False               # it should work
 
             if typ == TokenType.CHAR or typ == TokenType.RPAREN or typ == TokenType.CHAR_CLASS or typ == TokenType.STAR:
                 is_char = True
@@ -161,7 +201,7 @@ class RegexCompiler:
                 is_char = False
             result.append(item)
 
-        return result
+        return result, range_map
 
     def __next_id(self):
         return next(self.__generator)
@@ -185,7 +225,7 @@ class RegexCompiler:
         nfa.add_node(end)
 
 
-        # build iterable object
+        # todo use char class id instead, need remove
         if len(tok_val) == 5 and tok_val[2] == '-':
             char_range = range(ord(tok_val[1]), ord(tok_val[3]) + 1)
         else:
@@ -255,7 +295,7 @@ class RegexCompiler:
         :param curr_op_typ: current operator
         """
         # while len(self._op_stack) >0
-        if curr_op_typ == TokenType.RPAREN: # we got ) here, time to calculate all symbol between parent
+        if curr_op_typ == TokenType.RPAREN: # we got ')' here, time to calculate all symbol between parent
             try:
                 self.__handle_left_rparen()
             except IndexError:
@@ -276,7 +316,7 @@ class RegexCompiler:
             self.__CALC_MAP[top_typ]()
             self._op_stack.pop()
 
-            self.__handle_operator(curr_op_typ)                 # recursively check if can go on calculating
+            self.__handle_operator(curr_op_typ)                 # recursively check if it can go on calculating
         else:
             self._op_stack.append(curr_op_typ)                  # current operator should priorly calculate
 
@@ -325,9 +365,10 @@ class RegexCompiler:
         :param regex: regex expression string
         :return: (origin state, nfa, terminal state)
         """
-        tokens = RegexCompiler.lex_regex(regex)
-        # print(tokens)
-        return self.__analysis(tokens)
+        tokens, range_map = RegexCompiler.lex_regex(regex)
+        result = self.__analysis(tokens)
+        result[1].range_map = range_map
+        return result
 
 
 
@@ -489,6 +530,14 @@ class N2FConvertor:
 
         return origin_state, dfa
 
+
+class DFAOptimizer:
+    """
+    todo DFA化简 使用Hopcroft算法
+    """
+    def __init__(self, dfa: NFA, origin: int):
+        self.dfa: NFA = dfa
+        self.origin = origin
 
 
 

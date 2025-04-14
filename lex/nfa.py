@@ -2,7 +2,7 @@
 # @author: anishan
 # @date: 2025/04/09
 # @description: DFA简单实现，也许以后用线段树实现
-
+from common.range_map import RangeMap
 from common.replace_util import ReplaceUtil
 from common.type import StateType, NodeInfoMap, SymbolType, NodeInfo, NFAEdgeType, EPSILON
 
@@ -13,6 +13,7 @@ class NFA:
     Simple NFA(Non-determined Finity Automatic) implementation
     """
     def __init__(self):
+        self.range_map: RangeMap = None
         self.__nodes: NodeInfoMap = {}
         self.__edges: NFAEdgeType = {}
 

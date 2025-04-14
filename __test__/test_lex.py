@@ -9,8 +9,7 @@ from common.replace_util import ReplaceUtil
 from common.type import EPSILON
 from lex.regex_compiler import RegexCompiler, N2FConvertor
 
-reg = "say hello to my little friend"
-
+reg = "([a-f]|abc|abc)bcd*"
 
 def draw_nfa(com_nfa, filename="nfa_"):
     nfa = com_nfa[1]
@@ -99,11 +98,6 @@ class TestRegexCompiler(unittest.TestCase):
             elif dfa.nodes[state].accept:
                 print(dfa.nodes[state].meta)
                 state = cvt_dfa[0]
-
-
-
-
-
 
 
 
