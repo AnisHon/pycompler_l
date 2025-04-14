@@ -15,6 +15,8 @@ from lex.nfa import NFA
 
 
 class TokenType(Enum):
+    LBRACKET = auto()
+    RBRACKET = auto()
     CHAR = auto()
     DOT = auto()
     STAR = auto()
@@ -75,7 +77,6 @@ class RegexCompiler:
     # 正则表达式 -> token 规则
     __token_specs = [
         (TokenType.ESCAPE, r'\\.'),  # 转义字符，如 \*、\(
-        (TokenType.CHAR_CLASS, r'\[(\^?)(\\.|[^\]\\])+\]'),  # 字符类，如 [a-z]、[^a]
         (TokenType.DOT, r'\.'),
         (TokenType.STAR, r'\*'),
         (TokenType.PLUS, r'\+'),
@@ -83,6 +84,8 @@ class RegexCompiler:
         (TokenType.OR, r'\|'),
         (TokenType.LPAREN, r'\('),
         (TokenType.RPAREN, r'\)'),
+        (TokenType.LBRACKET, r'\['),
+        (TokenType.RBRACKET, r'\]'),
         (TokenType.CHAR, r'[^\\\[\]\.\*\+\?\|\(\)]'),  # 非特殊字符
     ]
 
@@ -149,19 +152,8 @@ class RegexCompiler:
 
             if typ == TokenType.CHAR:
                 tokens[idx] = (TokenType.CHAR, range_map.search(ord(val)).meta)
-            elif typ == TokenType.CHAR_CLASS:
-
-                if len(val) == 5 and val[2] == '-':
-                    beg = range_map.search(ord(val[1])).meta
-                    end = range_map.search(ord(val[3])).meta
-                    tokens[idx] = (TokenType.CHAR_CLASS, range(beg, end + 1))
-                else:
-                    char_classes = set([range_map.search(ord(val)).meta for val in val[1:-1]])
-                    tokens[idx] = (TokenType.CHAR_CLASS, char_classes)
 
             idx += 1
-
-
 
 
     @staticmethod
@@ -215,24 +207,24 @@ class RegexCompiler:
 
         self._calc_stack.append((start, nfa, end))
 
-    def __build_char_class_nfa(self, tok_val) -> None:
+    # def __build_char_class_nfa(self, tok_val) -> None:
+    #
+    #     start = self.__next_id()
+    #     end = self.__next_id()
+    #     nfa = NFA()
+    #     nfa.add_node(start)
+    #     nfa.add_node(end)
+    #
+    #     for i in tok_val:
+    #         state = self.__next_id()
+    #         nfa.add_node(state)
+    #         nfa.add_edge(start, state, i)
+    #         nfa.add_edge(state, end, EPSILON)
+    #
+    #     self._calc_stack.append((start, nfa, end))
 
-        start = self.__next_id()
-        end = self.__next_id()
-        nfa = NFA()
-        nfa.add_node(start)
-        nfa.add_node(end)
 
-        for i in tok_val:
-            state = self.__next_id()
-            nfa.add_node(state)
-            nfa.add_edge(start, state, i)
-            nfa.add_edge(state, end, EPSILON)
-
-        self._calc_stack.append((start, nfa, end))
-
-
-    def __do_calc_concat(self):
+    def __calc_concat(self):
         # 注意反向压栈顺序颠倒
         beg1, nfa1, end1 = self._calc_stack.pop()
         beg2, nfa2, end2 = self._calc_stack.pop()
@@ -242,14 +234,11 @@ class RegexCompiler:
         self._calc_stack.append((beg2, nfa2, end1))
 
 
-    def __do_calc_alter(self) -> None:
+    def __do_calc_alter(self, c1, c2):
         nfa = NFA()
 
-        try:
-            beg1, nfa1, end1 = self._calc_stack.pop()
-            beg2, nfa2, end2 = self._calc_stack.pop()
-        except IndexError:
-            raise RuntimeError("")
+        beg1, nfa1, end1 = c1
+        beg2, nfa2, end2 = c2
 
         nfa.concat(nfa1)
         nfa.concat(nfa2)
@@ -260,23 +249,38 @@ class RegexCompiler:
 
         nfa.add_edges((beg, beg1, EPSILON), (beg, beg2, EPSILON), (end1, end, EPSILON), (end2, end, EPSILON))
 
-        self._calc_stack.append((beg, nfa, end))
+        return beg, nfa, end
 
-
-    def __do_calc_closure(self) -> None:
-        beg, nfa, end = self._calc_stack.pop()
-
+    @staticmethod
+    def __do_calc_closure(c):
+        beg, nfa, end = c
         nfa.add_edge(end, beg, EPSILON)
-        self._calc_stack.append((beg, nfa, end))
+        return beg, nfa, end
+
+    def __calc_alter(self) -> None:
+        try:
+            self._calc_stack.append(self.__do_calc_alter(self._calc_stack.pop(), self._calc_stack.pop()))
+        except IndexError:
+            raise RuntimeError("")
+
+    def __calc_closure(self) -> None:
+        self._calc_stack.append(self.__do_calc_closure(self._calc_stack.pop()))
 
 
     def __handle_left_rparen(self):
         # 计算（清空）括号
-        op = self._op_stack.pop()
-        while op != TokenType.LPAREN:
-            self.__CALC_MAP[op]()
+        try:
             op = self._op_stack.pop()
+            while op != TokenType.LPAREN:
+                self.__CALC_MAP[op]()
+                op = self._op_stack.pop()
+        except IndexError:
+            raise RuntimeError("括号不匹配")
 
+    def __handle_left_bucket(self):
+
+
+        pass
 
 
     def __handle_operator(self, curr_op_typ):
@@ -284,21 +288,21 @@ class RegexCompiler:
         calculate
         :param curr_op_typ: current operator
         """
-        # while len(self._op_stack) >0
+
         if curr_op_typ == TokenType.RPAREN: # we got ')' here, time to calculate all symbol between parent
-            try:
-                self.__handle_left_rparen()
-            except IndexError:
-                raise RuntimeError("括号不匹配")
-            return
+            self.__handle_left_rparen()
+
+        elif curr_op_typ == TokenType.RBRACKET:   # begin calc bucket
+            self.__handle_left_bucket()
+
         elif len(self._op_stack) == 0:       # no operations here, push in
             self._op_stack.append(curr_op_typ)
             return
 
+
         top_typ = self._op_stack[-1]        # 栈顶
 
-
-        if top_typ == TokenType.LPAREN:                         # ( in stack top, we can't do notion about it
+        if top_typ == TokenType.LPAREN:                         # ( in stack top, we can do nothing about it
             self._op_stack.append(curr_op_typ)
             return
 
@@ -310,12 +314,14 @@ class RegexCompiler:
         else:
             self._op_stack.append(curr_op_typ)                  # current operator should priorly calculate
 
+
+
     def __build_calc_map(self):
         # god jesus, why python syntax dependency resolver so sucks, this function is stupid
         self.__CALC_MAP = {
-            TokenType.STAR: self.__do_calc_closure,
-            TokenType.OR: self.__do_calc_alter,
-            TokenType.AND: self.__do_calc_concat,
+            TokenType.STAR: self.__calc_closure,
+            TokenType.OR: self.__calc_alter,
+            TokenType.AND: self.__calc_concat,
             # TokenType.LPAREN: self.__handle_left_lparen,
             # TokenType.RPAREN: self.__handle_left_rparen,
         }
@@ -325,13 +331,11 @@ class RegexCompiler:
         for tok in tokens:
             tok_type, tok_val = tok
 
-
             if tok_type == TokenType.CHAR:
                 self.__build_char_nfa(tok_val)
-            elif tok_type == TokenType.CHAR_CLASS:
-                self.__build_char_class_nfa(tok_val)
             else:
                 self.__handle_operator(tok_type)
+
 
         # calculate rest of nfa
         while len(self._op_stack) > 0:
@@ -356,6 +360,7 @@ class RegexCompiler:
         :return: (origin state, nfa, terminal state)
         """
         tokens, range_map = RegexCompiler.lex_regex(regex)
+        self.__range_map = range_map
         result = self.__analysis(tokens)
         result[1].range_map = range_map
         return result
