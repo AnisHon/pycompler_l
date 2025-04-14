@@ -1,14 +1,13 @@
 
 class ReplaceUtil:
     def __init__(self):
-        self.__replacement = []
+        self.__replacement = {}
 
     def add_replace(self, origin, replace):
-        self.__replacement.append((origin, replace))
+        self.__replacement[origin] = replace
         return self
 
     def replace(self, content):
-        for (origin, replace) in self.__replacement:
-            if content == origin:
-                return replace
+        if content in self.__replacement:
+            return self.__replacement[content]
         return content

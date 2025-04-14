@@ -35,12 +35,6 @@ class TokenType(Enum):
             OR: 1,
             STAR: 1,
         },
-        # RPAREN: {
-        #     LPAREN: -1,
-        #     AND: -1,
-        #     OR: -1,
-        #     STAR: -1,
-        # },
         AND: {
             LPAREN: -1,
             RPAREN: 1,
@@ -139,7 +133,7 @@ class RegexCompiler:
                     for c in val[1:-1]: range_map.insert(ord(c), ord(c) + 1)
 
         generator = id_generator()
-        def func(root, left, right):
+        def func(root, *_):
             root.meta = next(generator)
 
 
@@ -152,16 +146,18 @@ class RegexCompiler:
         idx = 0
         while idx < len(tokens):
             typ, val = tokens[idx]
+
             if typ == TokenType.CHAR:
-                tokens[idx] = (TokenType.CHAR, range_map.search(val).meta)
+                tokens[idx] = (TokenType.CHAR, range_map.search(ord(val)).meta)
             elif typ == TokenType.CHAR_CLASS:
+
                 if len(val) == 5 and val[2] == '-':
-                    beg = range_map.search(val[1]).meta
-                    end = range_map.search(val[4]).meta
-                    tokens[idx] = (TokenType.CHAR, range(beg, end + 1))
+                    beg = range_map.search(ord(val[1])).meta
+                    end = range_map.search(ord(val[3])).meta
+                    tokens[idx] = (TokenType.CHAR_CLASS, range(beg, end + 1))
                 else:
-                    char_classes = set([range_map.search(val).meta for val in val[1:-1]])
-                    tokens[idx] = (TokenType.CHAR, char_classes)
+                    char_classes = set([range_map.search(ord(val)).meta for val in val[1:-1]])
+                    tokens[idx] = (TokenType.CHAR_CLASS, char_classes)
 
             idx += 1
 
@@ -182,9 +178,11 @@ class RegexCompiler:
             tokens.append((TokenType[typ], val))
             pos = m.end()
 
+
         RegexCompiler.handle_escape(tokens)
-        range_map = RegexCompiler.build_map(tokens)
-        # RegexCompiler.to_char_class(range_map, tokens) todo open this comment
+        range_map = RegexCompiler.build_map(tokens)     # range map
+        RegexCompiler.toke2class(range_map, tokens)     # to char class
+
         result = []
         is_char = False
 
@@ -212,6 +210,7 @@ class RegexCompiler:
         end = self.__next_id()
         nfa.add_node(start)
         nfa.add_node(end)
+
         nfa.add_edge(start, end, edge)
 
         self._calc_stack.append((start, nfa, end))
@@ -224,19 +223,10 @@ class RegexCompiler:
         nfa.add_node(start)
         nfa.add_node(end)
 
-
-        # todo use char class id instead, need remove
-        if len(tok_val) == 5 and tok_val[2] == '-':
-            char_range = range(ord(tok_val[1]), ord(tok_val[3]) + 1)
-        else:
-            char_range = tok_val[1:-1]      # simple but slow
-
-
-        for i in char_range:
-            c = chr(i) if isinstance(i, int) else i
+        for i in tok_val:
             state = self.__next_id()
             nfa.add_node(state)
-            nfa.add_edge(start, state, c)
+            nfa.add_edge(start, state, i)
             nfa.add_edge(state, end, EPSILON)
 
         self._calc_stack.append((start, nfa, end))
@@ -527,6 +517,8 @@ class N2FConvertor:
         state_id_map = N2FConvertor.__build_id_map(finished_state)  # state-id map
         dfa = self.__build_dfa(state_id_map)
         origin_state = state_id_map[self.__origin_closure] # origin_state closure(origin_state)
+
+        dfa.range_map = self.nfa.range_map
 
         return origin_state, dfa
 

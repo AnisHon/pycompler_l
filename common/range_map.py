@@ -7,7 +7,7 @@ class TreeRangeNode:
     """
     [beg, end)
     """
-    __slots__ = 'beg', 'end', 'height', 'left', 'right', 'meta'
+    __slots__ = 'beg', 'end', 'height', 'left', 'right', 'meta', 'min', 'max'
 
     def __init__(self, beg, end):
         self.beg: int = beg
@@ -16,6 +16,8 @@ class TreeRangeNode:
         self.left: TreeRangeNode | None = None
         self.right: TreeRangeNode | None = None
         self.meta: any = None
+        self.min: int = beg
+        self.max: int = end
 
     @property
     def mid(self):
@@ -47,23 +49,23 @@ class RangeMap:
 
     @staticmethod
     def __left_limit(curr: TreeRangeNode, left_root: TreeRangeNode):
+        """
+        check if it needs to reduce left interval
+        """
         if left_root is None:
             return curr.beg
 
-        while left_root.right is not None:
-            left_root = left_root.right
-
-        return left_root.end
+        return max(curr.beg, left_root.max)
 
     @staticmethod
     def __right_limit(curr: TreeRangeNode, right_root: TreeRangeNode):
+        """
+        check if it needs to reduce right interval
+        """
         if right_root is None:
             return curr.end
 
-        while right_root.left is not None:
-            right_root = right_root.left
-
-        return right_root.beg
+        return min(curr.end, right_root.min)
 
     @staticmethod
     def __get_height(root: TreeRangeNode | None):
@@ -170,6 +172,8 @@ class RangeMap:
 
         root.beg = RangeMap.__left_limit(root, root.left)
         root.end = RangeMap.__right_limit(root, root.right)
+
+
         root.height = max(left_height, right_height) + 1
 
 
@@ -223,7 +227,7 @@ class RangeMap:
 
     def search(self, ele):
         root: TreeRangeNode = self.__root
-        while root is not None and not root.beg < ele < root.end:
+        while root is not None and not root.beg <= ele < root.end:
             if ele > root.mid:
                 root = root.right
             elif ele < root.mid:

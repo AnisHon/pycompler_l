@@ -1,15 +1,17 @@
-import random
 import unittest
+import random
 
 from graphviz import Digraph
 
 from common.range_map import RangeMap, TreeRangeNode
 from lex.regex_compiler import RegexCompiler
 
-tree_graph = Digraph(filename='tree', format='png')
+tree_graph = Digraph(filename='tree', format='png', graph_attr={'fontname': 'Microsoft YaHei'},
+        node_attr={'fontname': 'Microsoft YaHei'},
+        edge_attr={'fontname': 'Microsoft YaHei'})
 def draw_tree(rm: RangeMap, name_handler = lambda node: f"({node.beg},{node.end})", label_handler = lambda node: f"({node.beg},{node.end})\n{node.height}"):
 
-    def handler_add_node(node: TreeRangeNode, l, r):
+    def handler_add_node(node: TreeRangeNode, *_):
 
         name = name_handler(node)
         tree_graph.node(name=name, label=label_handler(node), shape="box")
@@ -47,16 +49,18 @@ class TestRangeMap(unittest.TestCase):
 
     def test_range_map_2(self):
         reg_compiler = RegexCompiler()
-        rm = reg_compiler.compile("a|b|c[a-z][abc]i")[1].range_map
+        tokens, range_map = RegexCompiler.lex_regex("你好我是苏联")
+
 
         # print(rm.search(ord('p')).meta)
-        draw_tree(rm, label_handler=lambda node: f"[{chr(node.beg)}-{chr(node.end - 1)}]\n{node.meta}")
+        draw_tree(range_map, label_handler=lambda node: f"[{chr(node.beg)}-{chr(node.end - 1)}]\n{node.meta}")
 
     def test_hack(self):
-        hack = [(3, 19), (9, 15), (15, 20), (1, 13), (15, 21), (3, 13), (7, 11), (8, 12), (20, 21), (14, 21)]
+        hack = [random.randint(i, 100000) for i in range(10)]
+        print(hack)
         rm = RangeMap()
-        for a, b in hack[0:]:
-            rm.insert(a, b)
+        for a in hack[0:]:
+            rm.insert(a, a + 1)
 
         draw_tree(rm)
 
