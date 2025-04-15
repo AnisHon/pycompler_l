@@ -7,8 +7,8 @@ import unittest
 from graphviz import Digraph
 
 from common.replace_util import ReplaceUtil
-from common.type import EPSILON
-from lex.regex_compiler import RegexCompiler, N2FConvertor, RegexLexer, TokenType
+from common.common_type import EPSILON
+from lex.regex_compiler import RegexCompiler, N2FConvertor, RegexLexer, TokenType, DFAOptimizer
 
 # pattern = "([我-是]|苏联|[内务部])部长*贝利亚，废物贝利亚?"
 pattern = "[a-zA-Z0-9_-]+@[a-zA-Z0-9_-]+[\.a-zA-Z0-9_-]+"
@@ -41,9 +41,6 @@ def range_map(fa):
 
     fa.range_map.dfs(dlr_handler=handler)
 
-    print(len(fa.nodes))
-    print(len(fa.edges))
-
     return id_class_map
 
 
@@ -56,7 +53,10 @@ def draw(com_fa, filename):
         node_attr={'fontname': 'SimHei'},
         edge_attr={'fontname': 'SimHei'}
     )
-
+    fa_graph.attr(rankdir='LR', nodesep='0.5', ranksep='1.0')
+    fa_graph.attr('node', shape='circle', width='0.5')
+    # fa_graph.attr(overlap='scale')  # 自动调整避免重叠
+    # fa_graph.attr(splines='true')  # 使用平滑曲线
 
 
     id_range_map = range_map(fa)
@@ -71,7 +71,7 @@ def draw(com_fa, filename):
             fa_graph.node(str(item), shape='circle')
 
 
-
+    flag = False
     for edge in fa.edges:
         origin, label = edge
 
@@ -81,14 +81,20 @@ def draw(com_fa, filename):
 
         label = label.replace('\x00', '\\0')
 
+
+
         if isinstance(fa.edges[edge], set):
             for dest in fa.edges[edge]:
                 fa_graph.edge(str(origin), str(dest), label=str(label))
         else:
-            fa_graph.edge(str(origin), str(fa.edges[edge]), label=str(label))
+            if str(origin) == str(fa.edges[edge]):
+                fa_graph.edge(str(origin), str(fa.edges[edge]), loopdir= "top" if flag else 'bottom', label=str(label))
+                flag = not flag
+
+            else:
+                fa_graph.edge(str(origin), str(fa.edges[edge]), label=str(label))
 
 
-    fa_graph.attr(rankdir='LR')
     fa_graph.render(view=True, cleanup=True)
 
 def print_recursive(tokens):
@@ -120,10 +126,16 @@ class TestLex(unittest.TestCase):
 
         cvt_dfa = cvt.convert()
 
-        draw(cvt_dfa, "dfa")
 
-        dfa = cvt_dfa[1]
-        state = cvt_dfa[0]
+        opt = DFAOptimizer(dfa=cvt_dfa[1], origin=cvt_dfa[0])
+
+        origin, dfa = opt.optimize()
+
+
+        draw((origin, dfa), "dfa")
+
+
+        state = origin
         for c in "hanjunjie@tgu.edu.cn":
             c = ord(c)
             c = dfa.range_map.search(c).meta

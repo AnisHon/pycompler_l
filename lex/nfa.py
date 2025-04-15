@@ -4,7 +4,7 @@
 # @description: DFA简单实现，也许以后用线段树实现
 from common.range_map import RangeMap
 from common.replace_util import ReplaceUtil
-from common.type import StateType, NodeInfoMap, SymbolType, NodeInfo, NFAEdgeType, EPSILON
+from common.common_type import StateType, NodeInfoMap, SymbolType, NodeInfo, NFAEdgeType, EPSILON
 
 
 

@@ -3,10 +3,11 @@
 # @date: 2025/04/09
 # @description: DFA简单实现，也许以后用线段树实现
 
-from common.type import StateType, NodeInfoMap, SymbolType, DFAEdgeType, NodeInfo
+from common.common_type import StateType, NodeInfoMap, SymbolType, DFAEdgeType, NodeInfo
 
 class DFA:
     def __init__(self):
+        self.range_map = None
         self.__nodes: NodeInfoMap = {}
         self.__edges: DFAEdgeType = {}
 

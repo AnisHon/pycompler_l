@@ -9,9 +9,13 @@ from enum import Enum, auto
 
 from common.IdGenerator import id_generator
 from common.range_map import RangeMap
-from common.type import EPSILON, SymbolType
+from common.common_type import EPSILON, SymbolType, NodeInfo
+from common.work_priority_queue import WorkPriorityQueue
 from lex.dfa import DFA
 from lex.nfa import NFA
+
+import heapq
+
 
 MAX_UNICODE_POINT = 0x10FFFF
 class TokenType(Enum):
@@ -662,8 +666,6 @@ class N2FConvertor:
             self.__state_table[node] = self.__state_table.get(node, set())
 
 
-        # print(self.__state_table)
-
 
     def __initialize(self):
         """
@@ -736,7 +738,6 @@ class N2FConvertor:
         for state in finished_state:
             state_id_map[state] = next(generator)
 
-        # print(state_id_map)
         return state_id_map
 
 
@@ -750,11 +751,11 @@ class N2FConvertor:
         for state in state_id_map:          # foreach state_id_map add into dfa
             state_id = state_id_map[state]
             accept = False
-            meta = None
+            meta = []
             for node in state:              # if it has terminated state, inherit its attribute
                 if self.nfa.nodes[node].accept:
                     accept = True
-                    meta = self.nfa.nodes[node].meta
+                    if self.nfa.nodes[node].meta: meta.append(self.nfa.nodes[node].meta)
                     break
 
             dfa.add_node(state_id, accept=accept, meta=meta)
@@ -815,6 +816,9 @@ class DFAOptimizer:
 
 
     def __init__(self, dfa: DFA, origin: int):
+        if not isinstance(dfa, DFA):
+            raise TypeError(f"dfa expected: {DFA}, got:{type(dfa)}")
+
         self.dfa: DFA = dfa
         self.origin = origin
         self.__node_edge_map = {}
@@ -830,42 +834,167 @@ class DFAOptimizer:
             else:
                 non_terminal.add(state)
 
-        return [non_terminal, terminal]
+        non_terminal = frozenset(non_terminal)
+        terminal = frozenset(terminal)
+
+        return terminal, non_terminal
+
 
     def __get_translate_edge(self, state: int | Iterable):
         if isinstance(state, int):
             return self.__node_edge_map[state]
         else:
             translate_edge = set()
-            for s in state: translate_edge.update(s)
+            for s in state: translate_edge.add(s)
             return translate_edge
 
     def __goto(self, state, symbol):
         return self.dfa.translate_to(state, symbol)
 
-    def __all_in_predicate(self, state, dest_set):
+    def __predicate_any_in(self, state, dest_set):
         all_edges = self.__get_translate_edge(state)
-        return all(self.__goto(state, edge) in dest_set for edge in all_edges)
+        return any(self.__goto(state, edge) in dest_set for edge in all_edges)
 
-    def minimize(self):
-        work_stack = self.__init__split()
-
-        while work_stack:
-            split_set = work_stack.pop()
+    def __get_pre(self, min_set: frozenset[int]) -> frozenset[int]:
+        return frozenset(filter(lambda x: self.__predicate_any_in(x, min_set), self.dfa.nodes.keys()))
 
 
+    @staticmethod
+    def min_set(x, y):
+        if len(x) == 0:
+            return y
+        elif len(y) == 0:
+            return x
+        elif len(x) == 0 and len(y) == 0:
+            raise RuntimeError("Internal Error set x y is empty")
+
+        return x if len(x) < len(y) else y
+
+    def __minimize(self):
+        """
+        hopcroft minimize algorithm
+        :return: state sets
+        """
+        t, n = self.__init__split()
+        divided_sets: set[frozenset[int]] = {t, n}
+
+        work_queue = WorkPriorityQueue(lambda x: len(x))
+        work_queue.push(DFAOptimizer.min_set(t, n))
+
+
+        while (min_set := work_queue.pop()) is not None:
+            set_a: frozenset[int] = self.__get_pre(min_set)   # A \in { a | f(a, c) in min_set}
+
+            for divided in list(divided_sets):
+                intersect: frozenset[int] = divided & set_a
+                diff: frozenset[int] = divided - set_a
+
+                if not (intersect and diff):
+                    continue
+
+                divided_sets.remove(divided)
+                divided_sets.add(intersect)
+                divided_sets.add(diff)
+
+                if divided in work_queue:
+                    work_queue.remove(divided)
+                    work_queue.push(intersect, diff)
+                else:
+                    work_queue.push(DFAOptimizer.min_set(intersect, diff))
+
+
+        return divided_sets
+
+
+    def __build_node_table(self, divided_sets: set[frozenset[int]]):
+        generator = id_generator()
+
+        set_state_table = {}
+        node_info_table = {}
+
+
+        for divided in divided_sets:
+            state = next(generator)
+
+            set_state_table[divided] = state
+
+            node_info = node_info_table.get(state, NodeInfo(accept=False))
+            node_info_table[state] = node_info
+
+            if node_info.meta is None:
+                node_info.meta = []
+
+
+            for origin_state in divided:
+                origin_node_info = self.dfa.nodes[origin_state]
+                node_info.accept = node_info.accept or origin_node_info.accept
+                node_info.label = origin_node_info.label
+
+                if origin_node_info.meta: node_info.meta.append(origin_node_info.meta)
+
+        return set_state_table, node_info_table
+
+    def __build_state_new_states_table(self, divided_sets: set[frozenset[int]], set_state_table):
+        state_new_states_table = {}
+
+        for state in self.dfa.nodes.keys():
+            for divided in divided_sets:
+                if state not in divided:
+                    continue
+
+                ids = state_new_states_table.get(state, set())
+                ids.add(set_state_table[divided])
+                state_new_states_table[state] = ids
+
+
+        return state_new_states_table
+
+    def __build_connect_table(self, state_new_states_table):
+        connect_table = {}
+
+        for k, dest in self.dfa.edges.items():
+            origin, symbol = k
+            origin_set, dest_set = state_new_states_table[origin], state_new_states_table[dest]
+
+            for new_origin in origin_set:
+                for new_dest in dest_set:
+                    connect_table[(new_origin, symbol)] = new_dest
 
 
 
+        return connect_table
 
 
+    def __build_dfa(self, connect_table: dict, set_state_table: dict, node_info_table):
+        new_dfa = DFA()
+        new_dfa.range_map = self.dfa.range_map
+
+        for state in set_state_table.values():
+            node_info = node_info_table[state]
+            new_dfa.add_node(state, node_info.accept, node_info.label, node_info.meta)
+
+        for k, dest in connect_table.items():
+            origin, edge = k
+            new_dfa.add_edge(origin, dest, edge)
+
+        return new_dfa
+
+    def __find_new_origin(self, set_state_table: dict):
+        for k, v in set_state_table.items():
+            if self.origin in k:
+                return v
+
+        raise RuntimeError("No new origin found")
 
 
+    def optimize(self):
+        divided_sets = self.__minimize()
 
-# if __name__ == '__main__':
-    # # print("".join(map(lambda x: x[1], RegexCompiler.lex_regex("a|b(a|b|c)*d[a-c]"))))
-    # # print(TokenType.priority(TokenType.AND, TokenType.AND))
+        set_state_table, node_info_table = self.__build_node_table(divided_sets)
+        state_new_states_table = self.__build_state_new_states_table(divided_sets, set_state_table)
+        connect_table = self.__build_connect_table(state_new_states_table)
 
+        new_origin = self.__find_new_origin(set_state_table)
 
-    # print(nfa[1].nodes)
-    # nfa[1].print_edge()
+        return new_origin, self.__build_dfa(connect_table, set_state_table, node_info_table)
+
