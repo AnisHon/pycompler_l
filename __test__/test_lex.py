@@ -8,10 +8,11 @@ from graphviz import Digraph
 
 from common.replace_util import ReplaceUtil
 from common.type import EPSILON
-from lex.regex_compiler import RegexCompiler, N2FConvertor
+from lex.regex_compiler import RegexCompiler, N2FConvertor, RegexLexer, TokenType
 
-pattern = "([我-是]|苏联|[内务部])部长*贝利亚，废物贝利亚"
-
+# pattern = "([我-是]|苏联|[内务部])部长*贝利亚，废物贝利亚?"
+pattern = "[a-zA-Z0-9_-]+@[a-zA-Z0-9_-]+[\.a-zA-Z0-9_-]+"
+# pattern = "\.[0-9]+"
 
 label_convertor = ReplaceUtil() \
     .add_replace(" ", "' '") \
@@ -19,6 +20,7 @@ label_convertor = ReplaceUtil() \
     .add_replace("\t", "\\t") \
     .add_replace("\r", "\\r") \
     .add_replace("ε", "'ε'") \
+    .add_replace(".", "'.'") \
     .add_replace(EPSILON, "ε")
 
 
@@ -38,6 +40,9 @@ def range_map(fa):
 
 
     fa.range_map.dfs(dlr_handler=handler)
+
+    print(len(fa.nodes))
+    print(len(fa.edges))
 
     return id_class_map
 
@@ -70,24 +75,45 @@ def draw(com_fa, filename):
     for edge in fa.edges:
         origin, label = edge
 
-        label = id_range_map[label]
+        label:str = id_range_map[label]
+        if label == "[\x00-􏿿]":
+            label = '～'
+
+        label = label.replace('\x00', '\\0')
 
         if isinstance(fa.edges[edge], set):
             for dest in fa.edges[edge]:
                 fa_graph.edge(str(origin), str(dest), label=str(label))
         else:
-            fa_graph.edge(str(origin), str(fa.edges[edge]), str(label))
+            fa_graph.edge(str(origin), str(fa.edges[edge]), label=str(label))
 
 
     fa_graph.attr(rankdir='LR')
     fa_graph.render(view=True, cleanup=True)
 
+def print_recursive(tokens):
+    for item in tokens:
+        if item[0] == TokenType.CHAR_CLASS:
+            print('[', end='')
+            print_recursive(item[1])
+            print(']', end='')
+        else:
+            print(item[1], end='')
+
+class TestRegexLex(unittest.TestCase):
+    def test_parse(self):
+        tokens = RegexLexer.parse(r"[^a-z]abcd")[0]
+        print(tokens)
+        # arr = [0, 1, 2, 3]
+        # del arr[1:]
+        # print()
 
 
 class TestLex(unittest.TestCase):
-    def test_DFA(self):
+    def test_dfa(self):
         compiler = RegexCompiler()
-        beg, nfa, end = compiler.compile(pattern)
+        tokens, rm = RegexLexer.parse(pattern)
+        beg, nfa, end = compiler.compile(tokens, rm)
         # draw((beg, nfa), "nfa")
 
         cvt = N2FConvertor(nfa, beg)
@@ -97,11 +123,10 @@ class TestLex(unittest.TestCase):
         draw(cvt_dfa, "dfa")
 
         dfa = cvt_dfa[1]
-
         state = cvt_dfa[0]
-        # for c in pattern:
-        #     c = ord(c)
-        #     c = dfa.range_map.search(c).meta
-        #     state = dfa.translate_to(state, c)
-        #
-        #     print(dfa.nodes[state])
+        for c in "hanjunjie@tgu.edu.cn":
+            c = ord(c)
+            c = dfa.range_map.search(c).meta
+            state = dfa.translate_to(state, c)
+
+            print(dfa.nodes[state])

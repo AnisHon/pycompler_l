@@ -1,10 +1,10 @@
 # @encoding: utf-8
 # @author: anishan
 # @date: 2025/04/10
-# @description: 正则表达式编译，负责正则->NFA 和 NFA->DFA 以及 DFA简化
-import codecs
-import re
+# @description: 正则表达式编译，负责 正则解析 正则->NFA 和 NFA->DFA 以及 DFA简化
+
 from collections import deque
+from collections.abc import Iterable
 from enum import Enum, auto
 
 from common.IdGenerator import id_generator
@@ -13,19 +13,28 @@ from common.type import EPSILON, SymbolType
 from lex.dfa import DFA
 from lex.nfa import NFA
 
-
+MAX_UNICODE_POINT = 0x10FFFF
 class TokenType(Enum):
+
     CHAR = auto()
     DOT = auto()
     STAR = auto()
     PLUS = auto()
     QUESTION = auto()
+
     OR = auto()
     AND = auto()
+
     LPAREN = auto()
     RPAREN = auto()
+    LBRACKET = auto()
+    RBRACKET = auto()
+
     CHAR_CLASS = auto()
     ESCAPE = auto()
+    BACKSLASH = auto()
+    DASH = auto()
+    HAT = auto()
 
     _PRIORITY_MAP = {
         LPAREN: {
@@ -34,6 +43,8 @@ class TokenType(Enum):
             AND: 1,
             OR: 1,
             STAR: 1,
+            PLUS: 1,
+            QUESTION: 1
         },
         AND: {
             LPAREN: -1,
@@ -41,6 +52,8 @@ class TokenType(Enum):
             AND: 1,
             OR: 1,
             STAR: -1,
+            PLUS: -1,
+            QUESTION: -1
         },
         OR: {
             LPAREN: -1,
@@ -48,6 +61,8 @@ class TokenType(Enum):
             AND: -1,
             OR: 1,
             STAR: -1,
+            PLUS: -1,
+            QUESTION: -1
         },
         STAR: {
             LPAREN: -1,
@@ -55,8 +70,31 @@ class TokenType(Enum):
             AND: 1,
             OR: 1,
             STAR: 1,
+            PLUS: 1,
+            QUESTION: 1
+        },
+        PLUS: {
+            LPAREN: -1,
+            RPAREN: 1,
+            AND: 1,
+            OR: 1,
+            STAR: 1,
+            PLUS: 1,
+            QUESTION: 1
+        },
+        QUESTION: {
+            LPAREN: -1,
+            RPAREN: 1,
+            AND: 1,
+            OR: 1,
+            STAR: 1,
+            PLUS: 1,
+            QUESTION: 1
         }
     }
+
+    def __repr__(self):
+        return repr(self.name)
 
     @staticmethod
     def priority(op1, op2):
@@ -70,24 +108,331 @@ class TokenType(Enum):
 
 
 
-class RegexCompiler:
-    Token = tuple[TokenType, str | set | int]
-    # 正则表达式 -> token 规则
-    __token_specs = [
-        (TokenType.ESCAPE, r'\\.'),  # 转义字符，如 \*、\(
-        (TokenType.CHAR_CLASS, r'\[(\^?)(\\.|[^\]\\])+\]'),  # 字符类，如 [a-z]、[^a]
-        (TokenType.DOT, r'\.'),
-        (TokenType.STAR, r'\*'),
-        (TokenType.PLUS, r'\+'),
-        (TokenType.QUESTION, r'\?'),
-        (TokenType.OR, r'\|'),
-        (TokenType.LPAREN, r'\('),
-        (TokenType.RPAREN, r'\)'),
-        (TokenType.CHAR, r'[^\\\[\]\.\*\+\?\|\(\)]'),  # 非特殊字符
-    ]
 
-    __master_pattern = None
-    __master_re = None
+class RegexLexer:
+    HAT_CHAR = "@^" # spacial mark for ^
+
+    """
+    parse regex string into tokens.
+    - parse character escapes into char or id
+    - parse plain characters into id
+    - parse + - * ( ) ? into corresponded token
+    - convert characters into char range
+    - add explicit add concat
+    """
+
+    class LexState(Enum):
+        REGULAR = auto()
+        CHAR_CLASS = auto()
+        ESCAPE = auto()
+
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def __handle_regular(c: str):
+        # characters not in char class
+        match c:
+            case '(':
+                return TokenType.LPAREN
+            case ')':
+                return TokenType.RPAREN
+            case '[':
+                return TokenType.LBRACKET
+            case '|':
+                return TokenType.OR
+            case '*':
+                return TokenType.STAR
+            case '+':
+                return TokenType.PLUS
+            case '?':
+                return TokenType.QUESTION
+            case '.':
+                return TokenType.DOT
+            case '\\':
+                return TokenType.BACKSLASH
+            case _:
+                return TokenType.CHAR
+
+    @staticmethod
+    def __handle_escape(c: str):
+        if c in {'d'}:
+            return TokenType.ESCAPE
+        elif c in {'\\', '[', ']', '{', '}', "(", ")", '-', '.', '+', '?', '|'}:
+            return TokenType.CHAR
+        else:
+            raise RuntimeError(f"Unknown escape character {c}")
+
+
+    @staticmethod
+    def __handle_char_class(c: str):
+        match c:
+            case '-':
+                return TokenType.DASH
+            case '\\':
+                return TokenType.BACKSLASH
+            case ']':
+                return TokenType.RBRACKET
+            case '[':
+                return TokenType.LBRACKET
+            case _:
+                return TokenType.CHAR
+
+    @staticmethod
+    def __str2token(regex: str):
+        tokens = []
+        state_stack = [RegexLexer.LexState.REGULAR]
+
+        for i in range(len(regex)):
+            c = regex[i]
+
+            state = state_stack[-1]
+
+            match state:
+                case RegexLexer.LexState.REGULAR:
+                    typ = RegexLexer.__handle_regular(c)
+                case RegexLexer.LexState.CHAR_CLASS:
+                    typ = RegexLexer.__handle_char_class(c)
+                case RegexLexer.LexState.ESCAPE:
+                    typ = RegexLexer.__handle_escape(c)
+                    state_stack.pop()
+                case _:
+                    raise RuntimeError(f"Internal Error Unknown State: {c}")
+
+            match typ:
+                case TokenType.LBRACKET:
+                    state_stack.append(RegexLexer.LexState.CHAR_CLASS)
+
+                case TokenType.RBRACKET:
+                    try:
+                        state_stack.pop()
+                    except IndexError:
+                        raise RuntimeError(f"Bucket not match: {i}")
+
+                case TokenType.BACKSLASH:
+                    state_stack.append(RegexLexer.LexState.ESCAPE)
+                    continue
+
+            tokens.append((typ, c, i))
+
+        if len(state_stack) > 1:
+            raise RuntimeError(f"Bucket not close")
+
+        return tokens
+
+    @staticmethod
+    def __find_first_rbracket(process_stack) -> int:
+        i = len(process_stack) - 1
+        while process_stack[i][0] != TokenType.LBRACKET:
+            i -= 1
+        return i
+
+    @staticmethod
+    def __build_char_class(process_stack, idx):
+        char_class = process_stack[idx + 1:]
+        try:
+            # '-' at begin or end, juts parse as a char
+            if char_class[0][0] == TokenType.DASH:
+                char_class[0] = (TokenType.CHAR, '-', char_class[0][2])
+            if char_class[-1][0] == TokenType.DASH:
+                char_class[-1] = (TokenType.CHAR, '-', char_class[-1][2])
+
+            # '^' at the beginning
+            if char_class[0][1] == '^':
+                char_class[0] = (TokenType.HAT, '^', char_class[0][2])
+            return TokenType.CHAR_CLASS, char_class, char_class[0][2]
+        except IndexError:
+            raise RuntimeError(f"Empty bucket, idiot. pos: {process_stack[idx][2]}")
+
+
+    @staticmethod
+    def __do_convert(char_ranges):
+
+        temp = []
+
+        dash_flag = False
+        for typ, val, pos in char_ranges:
+
+            if typ == TokenType.CHAR:
+                if dash_flag:
+                    temp.append((temp.pop(), val))
+                    dash_flag = False
+                else:
+                    temp.append(val)
+            elif typ == TokenType.CHAR_CLASS:
+                if dash_flag:
+                    raise RuntimeError(f"Unsupported range at position {pos}")
+                temp.extend(RegexLexer.__do_convert(val))
+            elif typ == TokenType.DASH:
+                dash_flag = True
+            elif typ == TokenType.HAT:
+                temp.append(RegexLexer.HAT_CHAR)       # spacial mark
+
+        return set(temp)
+
+    @staticmethod
+    def __char_class_to_range(tokens):
+        i = 0
+        while i < len(tokens):
+            typ, val, pos = tokens[i]
+            if typ == TokenType.CHAR_CLASS:
+                char_ranges = RegexLexer.__do_convert(val)
+                tokens[i] = (TokenType.CHAR_CLASS, char_ranges, pos)
+            i += 1
+
+
+    @staticmethod
+    def __process_char_class(tokens):
+        new_tokens = []
+        process_stack = []
+
+        for token in tokens:
+            typ = token[0]
+            if typ == TokenType.LBRACKET:
+                process_stack.append(token)
+
+            elif typ == TokenType.RBRACKET:
+                idx = RegexLexer.__find_first_rbracket(process_stack)
+                token = RegexLexer.__build_char_class(process_stack, idx)
+                del process_stack[idx:]
+
+            if len(process_stack) == 0:
+                new_tokens.append(token)
+
+            elif typ != TokenType.LBRACKET:
+                process_stack.append(token)
+
+        return new_tokens
+
+    @staticmethod
+    def __should_concat(typ1, typ2):
+        valid_prev = {
+            TokenType.CHAR, TokenType.RPAREN, TokenType.CHAR_CLASS, TokenType.DOT,
+            TokenType.ESCAPE, TokenType.STAR, TokenType.PLUS, TokenType.QUESTION  # for postfix: *, +, ?
+        }   # c    )   []  \\  * ? +    .
+        valid_next = {
+            TokenType.CHAR, TokenType.LPAREN, TokenType.CHAR_CLASS,
+            TokenType.ESCAPE, TokenType.DOT
+        }  # c    (    []    \\
+        return typ1 in valid_prev and typ2 in valid_next
+
+    @staticmethod
+    def __add_concat(tokens):
+        if len(tokens) == 0:
+            return tokens
+        new_tokens = [tokens[0]]
+
+        i = 1
+        while i < len(tokens):
+            typ1 = new_tokens[-1][0]
+            typ2 = tokens[i][0]
+
+            if RegexLexer.__should_concat(typ1, typ2):
+                new_tokens.append((TokenType.AND, '·', tokens[i][2]))
+                new_tokens.append(tokens[i])
+
+            else:
+                new_tokens.append(tokens[i])
+
+            i += 1
+
+        return new_tokens
+
+    @staticmethod
+    def __build_range_map(tokens):
+        global MAX_UNICODE_POINT
+        range_map = RangeMap()
+        range_map.insert(0, MAX_UNICODE_POINT + 1) # cover all Unicode charset
+
+        # I don't if it's standardized, I just don't want to nest too many
+        def handle_char_class(char_ranges: set):
+            for item in char_ranges:
+                if item == RegexLexer.HAT_CHAR:
+                    continue
+                elif isinstance(item, str):
+                    range_map.insert_single(item)
+
+                else:
+                    range_map.insert(ord(item[0]), ord(item[1]) + 1)
+
+
+        for typ, val, pos in tokens:
+
+            if typ == TokenType.CHAR:
+                range_map.insert_single(val)
+
+            elif typ == TokenType.CHAR_CLASS:
+                handle_char_class(val)
+
+
+        generator = id_generator()
+        range_map.dfs(ldr_handler=lambda node, *_: node.set_meta(generator.__next__()))
+
+        return range_map
+
+    @staticmethod
+    def __calc_whole_set(range_map):
+
+        whole = set()
+        range_map.dfs(dlr_handler=lambda x, *_: whole.add(x.meta))
+
+        return whole
+
+    @staticmethod
+    def __cvt_char_range(tokens, range_map):
+        whole_set = RegexLexer.__calc_whole_set(range_map)
+        new_tokens = []
+        def handle_char_class(ranges: set):
+            new_range = set()
+            for item in ranges:
+                if item == RegexLexer.HAT_CHAR:
+                    continue
+
+                if isinstance(item, str):
+                    new_range.add(range_map.search(item).meta)
+                else:
+                    beg = range_map.search(item[0]).meta
+                    end = range_map.search(item[1]).meta
+                    new_range.add(range(beg, end + 1))
+
+            if RegexLexer.HAT_CHAR in ranges:        # 取反
+                flattened = {y for x in new_range for y in (x if isinstance(x, Iterable) else {x})}
+                new_range = whole_set - flattened
+
+            return new_range
+
+        for typ, val, pos in tokens:
+            if typ == TokenType.CHAR:
+                new_tokens.append((typ, range_map.search(val).meta, pos))
+            elif typ == TokenType.CHAR_CLASS:
+               char_ranges = handle_char_class(val)
+               new_tokens.append((typ, char_ranges, pos))
+            else:
+                new_tokens.append((typ, val, pos))
+        return new_tokens
+
+
+    @staticmethod
+    def parse(regex: str) -> tuple[list[tuple[TokenType, any, int]], RangeMap]:
+
+        tokens = RegexLexer.__str2token(regex)
+        tokens = RegexLexer.__process_char_class(tokens)
+        RegexLexer.__char_class_to_range(tokens)
+        range_map = RegexLexer.__build_range_map(tokens)
+
+        tokens = RegexLexer.__cvt_char_range(tokens, range_map)
+
+        tokens = RegexLexer.__add_concat(tokens)
+
+        return tokens, range_map
+
+
+
+
+class RegexCompiler:
+    Token = tuple[TokenType, str | set | int, int]
+    # 正则表达式 -> token 规则
+
 
     def __init__(self, generator = None):
 
@@ -97,109 +442,7 @@ class RegexCompiler:
         self.__generator = generator
         self._op_stack: list[TokenType] = []
         self._calc_stack: list[tuple[int, NFA, int]] = []
-        RegexCompiler.__master_pattern = '|'.join(f'(?P<{tok.name}>{pat})' for tok, pat in RegexCompiler.__token_specs) # why tok, pat can be exposed to outside?
-        RegexCompiler.__master_re = re.compile(RegexCompiler.__master_pattern)
-        # self.do
 
-    @staticmethod
-    def handle_escape(tokens):
-        i = 0
-        esc_char = set("()[]{}*|")
-        while i < len(tokens):
-            item = tokens[i]
-            if item[0] != TokenType.ESCAPE:
-                i += 1
-                continue
-
-            val = item[1][1:]
-            if val not in esc_char:
-                val = codecs.decode(val, 'unicode-escape')
-
-            tokens[i] = (TokenType.CHAR, val)
-            i += 1
-
-    @staticmethod
-    def build_map(tokens):
-        range_map = RangeMap()
-
-        for typ, val in tokens:
-            if typ == TokenType.CHAR:
-                range_map.insert(ord(val), ord(val) + 1)
-            elif typ == TokenType.CHAR_CLASS:
-
-                if len(val) == 5 and val[2] == '-':
-                    range_map.insert(ord(val[1]), ord(val[3]) + 1)
-                else:
-                    for c in val[1:-1]: range_map.insert(ord(c), ord(c) + 1)
-
-        generator = id_generator()
-        def func(root, *_):
-            root.meta = next(generator)
-
-
-        range_map.dfs(ldr_handler=func)
-
-        return range_map
-
-    @staticmethod
-    def toke2class(range_map: RangeMap, tokens):
-        idx = 0
-        while idx < len(tokens):
-            typ, val = tokens[idx]
-
-            if typ == TokenType.CHAR:
-                tokens[idx] = (TokenType.CHAR, range_map.search(ord(val)).meta)
-            elif typ == TokenType.CHAR_CLASS:
-
-                if len(val) == 5 and val[2] == '-':
-                    beg = range_map.search(ord(val[1])).meta
-                    end = range_map.search(ord(val[3])).meta
-                    tokens[idx] = (TokenType.CHAR_CLASS, range(beg, end + 1))
-                else:
-                    char_classes = set([range_map.search(ord(val)).meta for val in val[1:-1]])
-                    tokens[idx] = (TokenType.CHAR_CLASS, char_classes)
-
-            idx += 1
-
-
-
-
-    @staticmethod
-    def lex_regex(pattern: str) -> tuple[list, RangeMap]:
-        # todo 以后把他变成自己写的dfa
-        tokens = []
-        pos = 0
-        while pos < len(pattern):
-            m = RegexCompiler.__master_re.match(pattern, pos)
-            if not m:
-                raise SyntaxError(f"无法解析: {pattern[pos:]}")
-            typ: str = m.lastgroup
-            val: str = m.group()
-            tokens.append((TokenType[typ], val))
-            pos = m.end()
-
-
-        RegexCompiler.handle_escape(tokens)
-        range_map = RegexCompiler.build_map(tokens)     # range map
-        RegexCompiler.toke2class(range_map, tokens)     # to char class
-
-        result = []
-        is_char = False
-
-        for item in tokens:
-            typ, val = item
-
-            if is_char and (typ == TokenType.CHAR or typ == TokenType.LPAREN or typ == TokenType.CHAR_CLASS):
-                result.append((TokenType.AND, 'X'))
-                # is_char = False               # it should work
-
-            if typ == TokenType.CHAR or typ == TokenType.RPAREN or typ == TokenType.CHAR_CLASS or typ == TokenType.STAR:
-                is_char = True
-            else:
-                is_char = False
-            result.append(item)
-
-        return result, range_map
 
     def __next_id(self):
         return next(self.__generator)
@@ -219,17 +462,32 @@ class RegexCompiler:
 
         start = self.__next_id()
         end = self.__next_id()
+
         nfa = NFA()
         nfa.add_node(start)
         nfa.add_node(end)
 
-        for i in tok_val:
+        flattened = {y for x in tok_val for y in (x if isinstance(x, Iterable) else {x})}
+
+        for i in flattened:
             state = self.__next_id()
             nfa.add_node(state)
             nfa.add_edge(start, state, i)
             nfa.add_edge(state, end, EPSILON)
 
         self._calc_stack.append((start, nfa, end))
+
+    def __build_escape_nfa(self, tok_val):
+        # todo
+        pass
+
+    def __build_dot_nfa(self, _):
+        global MAX_UNICODE_POINT
+
+        beg_trans = self.__range_map.search(0).meta
+        end_trans = self.__range_map.search(MAX_UNICODE_POINT).meta
+
+        self.__build_char_class_nfa(range(beg_trans, end_trans + 1))
 
 
     def __do_calc_concat(self):
@@ -240,7 +498,6 @@ class RegexCompiler:
         nfa2.add_edge(end2, beg1, EPSILON)
 
         self._calc_stack.append((beg2, nfa2, end1))
-
 
     def __do_calc_alter(self) -> None:
         nfa = NFA()
@@ -262,11 +519,26 @@ class RegexCompiler:
 
         self._calc_stack.append((beg, nfa, end))
 
-
     def __do_calc_closure(self) -> None:
         beg, nfa, end = self._calc_stack.pop()
 
         nfa.add_edge(end, beg, EPSILON)
+        nfa.add_edge(beg, end, EPSILON)
+
+        self._calc_stack.append((beg, nfa, end))
+
+    def __do_calc_question(self) -> None:
+        beg, nfa, end = self._calc_stack.pop()
+
+        nfa.add_edge(beg, end, EPSILON)
+
+        self._calc_stack.append((beg, nfa, end))
+
+    def __do_calc_plus(self) -> None:
+        beg, nfa, end = self._calc_stack.pop()
+
+        nfa.add_edge(end, beg, EPSILON)
+
         self._calc_stack.append((beg, nfa, end))
 
 
@@ -276,8 +548,6 @@ class RegexCompiler:
         while op != TokenType.LPAREN:
             self.__CALC_MAP[op]()
             op = self._op_stack.pop()
-
-
 
     def __handle_operator(self, curr_op_typ):
         """
@@ -300,9 +570,8 @@ class RegexCompiler:
 
         if top_typ == TokenType.LPAREN:                         # ( in stack top, we can't do notion about it
             self._op_stack.append(curr_op_typ)
-            return
 
-        if TokenType.priority(top_typ, curr_op_typ) > 0:        # top operator should priorly calculate
+        elif TokenType.priority(top_typ, curr_op_typ) > 0:        # top operator should priorly calculate
             self.__CALC_MAP[top_typ]()
             self._op_stack.pop()
 
@@ -312,26 +581,31 @@ class RegexCompiler:
 
     def __build_calc_map(self):
         # god jesus, why python syntax dependency resolver so sucks, this function is stupid
+
+        # expand point, if need new function change this table
         self.__CALC_MAP = {
             TokenType.STAR: self.__do_calc_closure,
             TokenType.OR: self.__do_calc_alter,
             TokenType.AND: self.__do_calc_concat,
-            # TokenType.LPAREN: self.__handle_left_lparen,
-            # TokenType.RPAREN: self.__handle_left_rparen,
+            TokenType.PLUS: self.__do_calc_plus,
+            TokenType.QUESTION: self.__do_calc_question,
+
         }
 
     def __analysis(self, tokens: list[Token]) -> tuple[int, NFA, int]:
         self.__build_calc_map()
         for tok in tokens:
-            tok_type, tok_val = tok
+            tok_type, tok_val, pos = tok
 
 
-            if tok_type == TokenType.CHAR:
-                self.__build_char_nfa(tok_val)
-            elif tok_type == TokenType.CHAR_CLASS:
-                self.__build_char_class_nfa(tok_val)
-            else:
-                self.__handle_operator(tok_type)
+            # expand point
+            match tok_type:
+                case TokenType.CHAR: self.__build_char_nfa(tok_val)
+                case TokenType.CHAR_CLASS: self.__build_char_class_nfa(tok_val)
+                case TokenType.ESCAPE: self.__build_escape_nfa(tok_val)
+                case TokenType.DOT: self.__build_dot_nfa(tok_val)
+                case _: self.__handle_operator(tok_type)
+
 
         # calculate rest of nfa
         while len(self._op_stack) > 0:
@@ -349,14 +623,16 @@ class RegexCompiler:
 
         return nfa_tuple
 
-    def compile(self, regex: str) -> tuple[int, NFA, int]:
+    def compile(self, tokens: list[Token], range_map) -> tuple[int, NFA, int]:
         """
         compile regex to NFA
-        :param regex: regex expression string
+        :param tokens: regular expr tokens
+        :param range_map: range_map generated by Lexer
         :return: (origin state, nfa, terminal state)
         """
-        tokens, range_map = RegexCompiler.lex_regex(regex)
+        self.__range_map = range_map
         result = self.__analysis(tokens)
+
         result[1].range_map = range_map
         return result
 
@@ -527,9 +803,58 @@ class DFAOptimizer:
     """
     todo DFA化简 使用Hopcroft算法
     """
-    def __init__(self, dfa: NFA, origin: int):
-        self.dfa: NFA = dfa
+
+    def __build_node_edge_map(self):
+        for state, symbol in self.dfa.edges:
+            symbols = self.__node_edge_map.get(state, set())
+            symbols.add(symbol)
+            self.__node_edge_map[state] = symbols
+
+        for state in self.dfa.nodes:
+            self.__node_edge_map[state] = self.__node_edge_map.get(state, set())
+
+
+    def __init__(self, dfa: DFA, origin: int):
+        self.dfa: DFA = dfa
         self.origin = origin
+        self.__node_edge_map = {}
+        self.__build_node_edge_map()
+
+
+    def __init__split(self):
+        non_terminal = set()
+        terminal = set()
+        for state in self.dfa.nodes:
+            if self.dfa.nodes[state].accept:
+                terminal.add(state)
+            else:
+                non_terminal.add(state)
+
+        return [non_terminal, terminal]
+
+    def __get_translate_edge(self, state: int | Iterable):
+        if isinstance(state, int):
+            return self.__node_edge_map[state]
+        else:
+            translate_edge = set()
+            for s in state: translate_edge.update(s)
+            return translate_edge
+
+    def __goto(self, state, symbol):
+        return self.dfa.translate_to(state, symbol)
+
+    def __all_in_predicate(self, state, dest_set):
+        all_edges = self.__get_translate_edge(state)
+        return all(self.__goto(state, edge) in dest_set for edge in all_edges)
+
+    def minimize(self):
+        work_stack = self.__init__split()
+
+        while work_stack:
+            split_set = work_stack.pop()
+
+
+
 
 
 

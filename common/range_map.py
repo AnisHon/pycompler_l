@@ -38,14 +38,21 @@ class TreeRangeNode:
         obj.meta = node.meta
         return obj
 
+    def set_meta(self, meta):
+        self.meta = meta
+
 
 class RangeMap:
     """
     区间映射，目前不确定用什么实现，目前最简实现非平衡的树
     """
-    def __init__(self):
+    def __init__(self, enable_merge=False):
         self.__root = None
+        self.__enable_merge = enable_merge
 
+    @property
+    def enable_merge(self):
+        return self.__enable_merge
 
     @staticmethod
     def __left_limit(curr: TreeRangeNode, left_root: TreeRangeNode):
@@ -96,6 +103,11 @@ class RangeMap:
         RangeMap.__set_height(x)
         RangeMap.__set_height(y)
 
+        x.max = RangeMap.__right_limit(x, x.right)
+        x.min = RangeMap.__left_limit(x, x.left)
+        y.max = RangeMap.__right_limit(y, y.right)
+        y.min = RangeMap.__left_limit(y, y.left)
+
         return y
 
     @staticmethod
@@ -114,6 +126,11 @@ class RangeMap:
 
         RangeMap.__set_height(x)
         RangeMap.__set_height(y)
+
+        x.max = RangeMap.__right_limit(x, x.right)
+        x.min = RangeMap.__left_limit(x, x.left)
+        y.max = RangeMap.__right_limit(y, y.right)
+        y.min = RangeMap.__left_limit(y, y.left)
 
         return y
 
@@ -208,6 +225,11 @@ class RangeMap:
         if beg >= end:
             return root
 
+        # merge interval (optimization)
+        if self.__enable_merge and root.beg >= beg and root.end <= end:
+            return root
+
+
         if beg < root.beg:      # root (1, 5): (0, 5) => (0, 1) (1, 5)  or (-1, 0) => (-1, 0) (1, 5)
             root.left = self.__insert(root.left, beg, min(root.beg, end))
         elif root.beg < beg < root.end:    # root (1, 5): (2, 7) => (1, 2) (2, 5) or (6, 7) => (1, 5) (6, 7)
@@ -220,13 +242,29 @@ class RangeMap:
 
         return RangeMap.__maintain(root)
 
-    def insert(self, beg, end):
+    def insert(self, beg: int | str, end: int | str):
+        """
+        add range [beg, end)
+        :param beg: include
+        :param end: not include
+        """
+        if isinstance(beg, str):
+            beg = ord(beg)
+        if isinstance(end, str):
+            end = ord(end)
+
         assert beg < end
+
         self.__root = self.__insert(self.__root, beg, end)
 
+    def insert_single(self, beg):
+        if isinstance(beg, str):
+            beg = ord(beg)
+        self.insert(beg, beg + 1)
 
-    def search(self, ele):
+    def search(self, ele: int | str):
         root: TreeRangeNode = self.__root
+        ele = ele if isinstance(ele, int) else ord(ele)
         while root is not None and not root.beg <= ele < root.end:
             if ele > root.mid:
                 root = root.right

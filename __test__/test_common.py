@@ -48,20 +48,27 @@ class TestRangeMap(unittest.TestCase):
         rm.insert(5, 6)
 
     def test_range_map_2(self):
-        reg_compiler = RegexCompiler()
-        tokens, range_map = RegexCompiler.lex_regex("你好我是苏联")
+        # reg_compiler = RegexCompiler()
+        # tokens, range_map = RegexCompiler.lex_regex("你好我是苏联")
 
-
+        pass
         # print(rm.search(ord('p')).meta)
-        draw_tree(range_map, label_handler=lambda node: f"[{chr(node.beg)}-{chr(node.end - 1)}]\n{node.meta}")
+        # draw_tree(range_map, label_handler=lambda node: f"[{chr(node.beg)}-{chr(node.end - 1)}]\n{node.meta}")
 
     def test_hack(self):
-        hack = [random.randint(i, 100000) for i in range(10)]
+        hack = [(random.randint(0, 100), random.randint(100, 1000)) for i in range(10)]
         print(hack)
         rm = RangeMap()
-        for a in hack[0:]:
-            rm.insert(a, a + 1)
+        for beg, end in hack:
+            rm.insert(beg, end)
 
         draw_tree(rm)
 
+    def test_(self):
+        rm = RangeMap()
+        seq = [(0, 1114112), (97, 123), (97, 98), (98, 99), (99, 100), (100, 101)]
+        for beg, end in seq[:-2]:
+            rm.insert(beg, end)
+        rm.insert(99, 100)
 
+        draw_tree(rm)

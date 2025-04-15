@@ -12,10 +12,14 @@ class NFA:
     """
     Simple NFA(Non-determined Finity Automatic) implementation
     """
-    def __init__(self):
-        self.range_map: RangeMap = None
+
+
+    def __init__(self, range_map: RangeMap = None):
+        self.range_map: RangeMap = range_map
         self.__nodes: NodeInfoMap = {}
         self.__edges: NFAEdgeType = {}
+
+
 
     @property
     def nodes(self) -> NodeInfoMap:
