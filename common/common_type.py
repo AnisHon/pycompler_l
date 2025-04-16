@@ -8,10 +8,11 @@ EPSILON = ""
 EMPTY_CHAR = EPSILON
 
 class NodeInfo:
-    __slots__ = ("accept", "label", "meta")
-    def __init__(self, accept: bool, label: str = None, meta: Hashable = None):
+    __slots__ = ("accept", "label", "meta", "priority")
+    def __init__(self, accept: bool, label: str = None, meta: Hashable = None, priority: int | None = None):
         self.accept = accept
         self.label: Hashable | None = label
+        self.priority: int | None = priority
         self.meta = meta
 
     def __str__(self) -> str:

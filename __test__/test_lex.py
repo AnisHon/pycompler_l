@@ -9,7 +9,7 @@ from graphviz import Digraph
 from common.lexer import Lexer
 from common.replace_util import ReplaceUtil
 from common.common_type import EPSILON
-from lex.regex_compiler import RegexCompiler, N2FConvertor, RegexLexer, TokenType, DFAOptimizer
+from lex.regex_compiler import RegexCompiler, N2DConvertor, RegexLexer, TokenType, DFAOptimizer
 
 # pattern = "([我-是]|苏联|[内务部])部长*贝利亚，废物贝利亚?"
 pattern = "[a-zA-Z0-9_-]+@[a-zA-Z0-9_-]+[\.a-zA-Z0-9_-]+"
@@ -123,7 +123,7 @@ class TestLex(unittest.TestCase):
         beg, nfa, end = compiler.compile(tokens, rm)
         # draw((beg, nfa), "nfa")
 
-        cvt = N2FConvertor(nfa, beg)
+        cvt = N2DConvertor(nfa, beg)
 
         cvt_dfa = cvt.convert()
 
@@ -145,8 +145,18 @@ class TestLex(unittest.TestCase):
             print(dfa.nodes[state])
 
     def test_lexer(self):
-        lexer = Lexer([("ABC", "if|else|int"), ("abc", "[a-zA-z_][0-9a-zA-z_]+"), ])
+        lexer = Lexer([("keyword", "if|else|long"),
+                       ("identifier", "[^0-9][a-z]+"), ("op", r"\+|-|\*|/")], minimization=True)
+        lexer.check()
         origin, dfa = lexer.origin, lexer.dfa
-        print("\n".join(map(lambda x: str(x), dfa.nodes.items())))
+        print(len(dfa.nodes), len(dfa.edges))
+        # draw((origin, dfa), "dfa")
 
-        draw((origin, dfa), "dfa")
+
+        print(list(filter(lambda x: x.accept,dfa.nodes.values())))
+
+        state = origin
+        for c in "else":
+            c = dfa.range_map.search(c).meta
+            state = dfa.translate_to(state, c)
+            print(dfa.nodes[state])

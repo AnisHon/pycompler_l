@@ -16,24 +16,6 @@ from lex.nfa import NFA
 
 MAX_UNICODE_POINT = 0x10FFFF
 
-
-def __priority_gt(a, b):
-    if a is None or b in None:
-        return False
-
-    return a > b
-
-def __build_node_info(self, states) -> NodeInfo:
-
-    meta = None
-    final_node = NodeInfo(False)
-    for state in states:  # if it has terminated state, inherit its attribute
-        node = self.nfa.nodes[state]
-        if __priority_gt(meta, node.meta):
-            final_node = node
-
-    return final_node
-
 class TokenType(Enum):
 
     CHAR = auto()
@@ -56,7 +38,7 @@ class TokenType(Enum):
     DASH = auto()
     HAT = auto()
 
-    __PRIORITY_MAP = {
+    _PRIORITY_MAP = {
         LPAREN: {
             LPAREN: -1, RPAREN: 1, AND: 1, OR: 1,
             STAR: 1, PLUS: 1, QUESTION: 1
@@ -89,7 +71,7 @@ class TokenType(Enum):
     @classmethod
     def priority(cls, op1, op2):
         try:
-            p_map: dict = cls.__PRIORITY_MAP.value  # wtf is this? so python, fuck you!
+            p_map: dict = cls._PRIORITY_MAP.value  # wtf is this? so python, fuck you!
             return p_map[op1.value][op2.value]
         except KeyError:
             raise RuntimeError(f"Impossible Sequence {op1.name} {op2.name}")
@@ -146,7 +128,7 @@ class RegexLexer:
     def __handle_escape(c: str):
         if c in {'d'}:
             return TokenType.ESCAPE
-        elif c in {'\\', '[', ']', '{', '}', "(", ")", '-', '.', '+', '?', '|'}:
+        elif c in {'\\', '[', ']', '{', '}', "(", ")", '-', '.', '+', '?', '|', '*'}:
             return TokenType.CHAR
         else:
             raise RuntimeError(f"Unknown escape character {c}")
@@ -373,13 +355,16 @@ class RegexLexer:
         # I don't if it's standardized, I just don't want to nest too many
         def handle_char_class(char_ranges: set):
             for item in char_ranges:
-                if item == RegexLexer.HAT_CHAR:     # spacial operator ^(@^), i don't think it's good idea
+                if item == RegexLexer.HAT_CHAR:     # spacial operator ^(@^), I don't think it's good idea
                     continue
                 elif isinstance(item, str):
                     range_map.insert_single(item)
 
                 else:
-                    range_map.insert(ord(item[0]), ord(item[1]) + 1)
+                    beg, end = ord(item[0]), ord(item[1]) + 1
+                    if beg >= end:
+                        raise RuntimeError(f"Bad range {item[0]}-{item[1]} at position {pos}")
+                    range_map.insert(beg, end)
 
 
         for typ, val, pos in tokens:
@@ -552,7 +537,7 @@ class RegexCompiler:
             beg1, nfa1, end1 = self._calc_stack.pop()
             beg2, nfa2, end2 = self._calc_stack.pop()
         except IndexError:
-            raise RuntimeError("")
+            raise RuntimeError("wrong |")
 
         nfa.concat(nfa1)
         nfa.concat(nfa2)
@@ -581,7 +566,11 @@ class RegexCompiler:
         self._calc_stack.append((beg, nfa, end))
 
     def __do_calc_plus(self) -> None:
-        beg, nfa, end = self._calc_stack.pop()
+        try:
+            beg, nfa, end = self._calc_stack.pop()
+        except IndexError:
+            raise RuntimeError("")
+
 
         nfa.add_edge(end, beg, EPSILON)
 
@@ -682,12 +671,7 @@ class RegexCompiler:
         result[1].range_map = range_map
         return result
 
-    @staticmethod
-    def __set_label(name: Any, nfa: NFA, idx):
-        for state, node_info in nfa.nodes.items():
-            if node_info.accept:
-                node_info.label = name
-                node_info.meta = idx
+
 
     def compile_group(self, groups: list[tuple[Any, list[Token]]], range_map):
         self._op_stack: list[TokenType] = []
@@ -704,13 +688,16 @@ class RegexCompiler:
             name, (origin, nfa, dest) = entry
             combined_nfa.concat(nfa)
             combined_nfa.add_edge(origin_state, origin)
-            RegexCompiler.__set_label(name, nfa, idx)
+
+            node_info = nfa.nodes[dest]
+            node_info.label = name
+            node_info.priority = idx
 
         return origin_state, combined_nfa
 
 
 
-class N2FConvertor:
+class N2DConvertor:
     """
     NFA to DFA Convertor
     """
@@ -748,7 +735,13 @@ class N2FConvertor:
 
 
 
-    def __init__(self, nfa: NFA, origin: int):
+    def __init__(self, nfa: NFA, origin: int, enable_multi_label = False):
+        """
+        nfa to dfa
+        :param nfa: just a nfa
+        :param origin: initial state
+        :param enable_multi_label: enable multi labels when conflict(multi state cast to single state) occurs
+        """
         self.nfa: NFA = nfa
         self.__state_table: dict[int, set[SymbolType]] = {}
         self.__translate_table: dict[tuple[frozenset[int], SymbolType], frozenset[int]] = {} # 转移表，表示k闭包后的转移情况
@@ -756,10 +749,14 @@ class N2FConvertor:
         self.origin = origin
         self.__origin_closure = frozenset(self.nfa.closure({self.origin}))
 
+        self.__enable_multi_label = enable_multi_label
+
         self.__initialize()
 
 
-
+    @property
+    def enable_multi_label(self):
+        return self.__enable_multi_label
 
     def __get_connected(self, states: frozenset[int]):
         """
@@ -809,7 +806,41 @@ class N2FConvertor:
 
 
 
+    @staticmethod
+    def __priority_gt(node1: NodeInfo, node2: NodeInfo):
+        if node1.priority is None and node2.priority is not None:
+            return True
 
+        if node2.priority is None:
+            return False
+
+        return node1.priority > node2.priority
+
+    def __build_node_info(self, states) -> NodeInfo:
+
+        final_node = NodeInfo(False)
+        temp_labels = set()
+
+
+        terminal_state = filter(lambda x: self.nfa.nodes[x].accept, states)
+
+        for state in terminal_state:  # if it has terminated state, inherit its attribute
+            node = self.nfa.nodes[state]
+
+
+            if self.enable_multi_label:
+                temp_labels.add(node.label)
+
+
+            elif N2DConvertor.__priority_gt(final_node, node):
+
+                final_node = node
+
+
+        if self.enable_multi_label:
+            final_node.label = frozenset(temp_labels)
+
+        return final_node
 
     def __build_dfa(self, state_id_map):
         """
@@ -824,6 +855,8 @@ class N2FConvertor:
             node_info = self.__build_node_info(state)
 
             dfa.add_node(state_id, accept=node_info.accept, label=node_info.label, meta=node_info.meta)
+
+
 
         for item in self.__translate_table:     # (origin, symbol) -> dest
             origin, edge = item
@@ -856,9 +889,9 @@ class N2FConvertor:
             finished_state.add(state)
 
 
-        state_id_map = N2FConvertor.__build_id_map(finished_state)  # state-id map
+        state_id_map = N2DConvertor.__build_id_map(finished_state)  # state-id map
         dfa = self.__build_dfa(state_id_map)
-        origin_state = state_id_map[self.__origin_closure] # origin_state closure(origin_state)
+        origin_state = state_id_map[self.__origin_closure]          # origin_state closure(origin_state)
 
         dfa.range_map = self.nfa.range_map
 
@@ -867,8 +900,13 @@ class N2FConvertor:
 
 class DFAOptimizer:
     """
-    todo DFA化简 使用Hopcroft算法
+    DFA化简 使用Hopcroft算法
     """
+
+    class LabelType(Enum):
+        SINGLE = auto()
+        MULTI = auto()
+        DISABLE = auto()
 
     def __build_node_edge_map(self):
         for state, symbol in self.dfa.edges:
@@ -880,7 +918,7 @@ class DFAOptimizer:
             self.__node_edge_map[state] = self.__node_edge_map.get(state, set())
 
 
-    def __init__(self, dfa: DFA, origin: int):
+    def __init__(self, dfa: DFA, origin: int, label_type: LabelType = LabelType.SINGLE):
         if not isinstance(dfa, DFA):
             raise TypeError(f"dfa expected: {DFA}, got:{type(dfa)}")
 
@@ -888,24 +926,34 @@ class DFAOptimizer:
         self.origin = origin
         self.__node_edge_map = {}
         self.__build_node_edge_map()
+        self.__label_type = label_type
+
+    @property
+    def label_type(self):
+        return self.__label_type
 
 
-    def __init__split(self):
-        non_terminal = set()
-        terminal = set()
-        for state in self.dfa.nodes:
-            if self.dfa.nodes[state].accept:
-                terminal.add(state)
+    def __init_split(self):
+        """
+        spilt by label or accept type
+        :return:
+        """
+
+        terminal_groups = {}
+
+        for state, node_info in self.dfa.nodes.items():
+
+            if self.label_type == self.LabelType.DISABLE:
+                k = node_info.accept
             else:
-                non_terminal.add(state)
+                k = node_info.label
 
-        non_terminal = frozenset(non_terminal)
-        terminal = frozenset(terminal)
+            labeled_terminals = terminal_groups.get(k, set())
+            labeled_terminals.add(state)
+            terminal_groups[k] = labeled_terminals
 
-        for state in terminal:
-            print(self.dfa.nodes[state])
 
-        return terminal, non_terminal
+        return map(lambda x: frozenset(x), terminal_groups.values())
 
 
     def __get_translate_edge(self, state: int | Iterable):
@@ -943,14 +991,13 @@ class DFAOptimizer:
         hopcroft minimize algorithm
         :return: state sets
         """
-        t, n = self.__init__split()
-        divided_sets: set[frozenset[int]] = set()
-        if t: divided_sets.add(t)
-        if n: divided_sets.add(n)
+        initial_split = self.__init_split()
+
+        divided_sets: set[frozenset[int]] = {item for item in initial_split if item}
 
 
         work_queue = WorkPriorityQueue(lambda x: len(x))
-        work_queue.push(DFAOptimizer.min_set(t, n))
+        work_queue.push(min(divided_sets, key=lambda x: len(x)))
 
 
         while (min_set := work_queue.pop()) is not None:
@@ -975,28 +1022,60 @@ class DFAOptimizer:
 
         return divided_sets
 
+    def __build_node_info(self, divided_set):
+        """
+        build node info (new state), label vary from label type
+        :param divided_set: state (original dfa) set
+        :return:
+        """
+        node_info: NodeInfo = NodeInfo(accept=False)
+        temp_labels: set = set()
+        for origin_state in divided_set:
+            origin_node_info = self.dfa.nodes[origin_state]
 
-    def __build_node_table(self, divided_sets: set[frozenset[int]]):
+            if not origin_node_info.accept:
+                continue
+
+            node_info.accept = True
+
+
+
+            if self.label_type == self.LabelType.SINGLE:
+                node_info.label = origin_node_info.label
+                node_info.meta = origin_node_info.meta
+                node_info.priority = origin_node_info.priority
+                break
+            elif self.label_type == self.LabelType.MULTI:
+                label = origin_node_info.label
+                labels = origin_node_info.label if isinstance(label, Iterable) else {label}
+
+                temp_labels.update(labels)
+
+
+        if self.label_type == self.LabelType.MULTI and node_info.accept:
+            node_info.label = frozenset(temp_labels)
+
+        return node_info
+
+    def __build_node_table(self, divided_sets: set[frozenset[int]]) -> tuple[dict, dict]:
+        """
+        assign id, node_info for each state sets (new state)
+        :return:
+        """
         generator = id_generator()
 
-        set_state_table = {}
-        node_info_table = {}
+        set_state_table = {}    # state set -> new state id
+        node_info_table = {}    # new state -> node info
 
 
-        for divided in divided_sets:
+        for divided_set in divided_sets:        # divided_set -> new state
             state = next(generator)
 
-            set_state_table[divided] = state
+            set_state_table[divided_set] = state
 
-            node_info = node_info_table.get(state, NodeInfo(accept=False))
+            node_info = self.__build_node_info(divided_set)
             node_info_table[state] = node_info
 
-            for origin_state in divided:
-                origin_node_info = self.dfa.nodes[origin_state]
-                node_info.accept = node_info.accept or origin_node_info.accept
-                node_info.label = origin_node_info.label
-
-                # todo high priority first
 
         return set_state_table, node_info_table
 
