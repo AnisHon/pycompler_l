@@ -4,7 +4,6 @@ import random
 from graphviz import Digraph
 
 from common.range_map import RangeMap, TreeRangeNode
-from lex.regex_compiler import RegexCompiler
 
 tree_graph = Digraph(filename='tree', format='png', graph_attr={'fontname': 'Microsoft YaHei'},
         node_attr={'fontname': 'Microsoft YaHei'},

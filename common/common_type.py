@@ -1,3 +1,5 @@
+from collections.abc import Hashable
+
 StateType = int
 SymbolType = str | int
 
@@ -7,9 +9,9 @@ EMPTY_CHAR = EPSILON
 
 class NodeInfo:
     __slots__ = ("accept", "label", "meta")
-    def __init__(self, accept: bool, label: str = None, meta = None):
+    def __init__(self, accept: bool, label: str = None, meta: Hashable = None):
         self.accept = accept
-        self.label = label
+        self.label: Hashable | None = label
         self.meta = meta
 
     def __str__(self) -> str:

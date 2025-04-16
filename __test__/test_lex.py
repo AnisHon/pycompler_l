@@ -6,6 +6,7 @@ import unittest
 
 from graphviz import Digraph
 
+from common.lexer import Lexer
 from common.replace_util import ReplaceUtil
 from common.common_type import EPSILON
 from lex.regex_compiler import RegexCompiler, N2FConvertor, RegexLexer, TokenType, DFAOptimizer
@@ -108,7 +109,7 @@ def print_recursive(tokens):
 
 class TestRegexLex(unittest.TestCase):
     def test_parse(self):
-        tokens = RegexLexer.parse(r"[^a-z]abcd")[0]
+        tokens = RegexLexer.parse_group([('abc', "a|b|c"), ('efg', 'efg'), ('hijk', '[h-k][hijk]*')])
         print(tokens)
         # arr = [0, 1, 2, 3]
         # del arr[1:]
@@ -142,3 +143,10 @@ class TestLex(unittest.TestCase):
             state = dfa.translate_to(state, c)
 
             print(dfa.nodes[state])
+
+    def test_lexer(self):
+        lexer = Lexer([("ABC", "if|else|int"), ("abc", "[a-zA-z_][0-9a-zA-z_]+"), ])
+        origin, dfa = lexer.origin, lexer.dfa
+        print("\n".join(map(lambda x: str(x), dfa.nodes.items())))
+
+        draw((origin, dfa), "dfa")

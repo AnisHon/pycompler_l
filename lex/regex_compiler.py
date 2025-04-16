@@ -2,11 +2,11 @@
 # @author: anishan
 # @date: 2025/04/10
 # @description: 正则表达式编译，负责 正则解析 正则->NFA 和 NFA->DFA 以及 DFA简化
-
+from itertools import chain
+from typing import Any
 from collections import deque
 from collections.abc import Iterable
 from enum import Enum, auto
-
 from common.IdGenerator import id_generator
 from common.range_map import RangeMap
 from common.common_type import EPSILON, SymbolType, NodeInfo
@@ -14,10 +14,26 @@ from common.work_priority_queue import WorkPriorityQueue
 from lex.dfa import DFA
 from lex.nfa import NFA
 
-import heapq
-
-
 MAX_UNICODE_POINT = 0x10FFFF
+
+
+def __priority_gt(a, b):
+    if a is None or b in None:
+        return False
+
+    return a > b
+
+def __build_node_info(self, states) -> NodeInfo:
+
+    meta = None
+    final_node = NodeInfo(False)
+    for state in states:  # if it has terminated state, inherit its attribute
+        node = self.nfa.nodes[state]
+        if __priority_gt(meta, node.meta):
+            final_node = node
+
+    return final_node
+
 class TokenType(Enum):
 
     CHAR = auto()
@@ -40,72 +56,40 @@ class TokenType(Enum):
     DASH = auto()
     HAT = auto()
 
-    _PRIORITY_MAP = {
+    __PRIORITY_MAP = {
         LPAREN: {
-            LPAREN: -1,
-            RPAREN: 1,
-            AND: 1,
-            OR: 1,
-            STAR: 1,
-            PLUS: 1,
-            QUESTION: 1
+            LPAREN: -1, RPAREN: 1, AND: 1, OR: 1,
+            STAR: 1, PLUS: 1, QUESTION: 1
         },
         AND: {
-            LPAREN: -1,
-            RPAREN: 1,
-            AND: 1,
-            OR: 1,
-            STAR: -1,
-            PLUS: -1,
-            QUESTION: -1
+            LPAREN: -1, RPAREN: 1, AND: 1, OR: 1,
+            STAR: -1, PLUS: -1, QUESTION: -1
         },
         OR: {
-            LPAREN: -1,
-            RPAREN: 1,
-            AND: -1,
-            OR: 1,
-            STAR: -1,
-            PLUS: -1,
-            QUESTION: -1
+            LPAREN: -1, RPAREN: 1, AND: -1, OR: 1,
+            STAR: -1, PLUS: -1, QUESTION: -1
         },
         STAR: {
-            LPAREN: -1,
-            RPAREN: 1,
-            AND: 1,
-            OR: 1,
-            STAR: 1,
-            PLUS: 1,
-            QUESTION: 1
+            LPAREN: -1, RPAREN: 1, AND: 1, OR: 1,
+            STAR: 1, PLUS: 1, QUESTION: 1
         },
         PLUS: {
-            LPAREN: -1,
-            RPAREN: 1,
-            AND: 1,
-            OR: 1,
-            STAR: 1,
-            PLUS: 1,
-            QUESTION: 1
+            LPAREN: -1, RPAREN: 1, AND: 1, OR: 1,
+            STAR: 1, PLUS: 1, QUESTION: 1
         },
         QUESTION: {
-            LPAREN: -1,
-            RPAREN: 1,
-            AND: 1,
-            OR: 1,
-            STAR: 1,
-            PLUS: 1,
-            QUESTION: 1
+            LPAREN: -1, RPAREN: 1, AND: 1, OR: 1,
+            STAR: 1, PLUS: 1, QUESTION: 1
         }
     }
 
     def __repr__(self):
         return repr(self.name)
 
-    @staticmethod
-    def priority(op1, op2):
-        # if op1 is None:
-        #     return -1
+    @classmethod
+    def priority(cls, op1, op2):
         try:
-            p_map: dict = TokenType._PRIORITY_MAP.value  # wtf is this? so python, fuck you!
+            p_map: dict = cls.__PRIORITY_MAP.value  # wtf is this? so python, fuck you!
             return p_map[op1.value][op2.value]
         except KeyError:
             raise RuntimeError(f"Impossible Sequence {op1.name} {op2.name}")
@@ -136,7 +120,7 @@ class RegexLexer:
     @staticmethod
     def __handle_regular(c: str):
         # characters not in char class
-        match c:
+        match c:                        #  converting to dict can be much more elegant
             case '(':
                 return TokenType.LPAREN
             case ')':
@@ -170,7 +154,7 @@ class RegexLexer:
 
     @staticmethod
     def __handle_char_class(c: str):
-        match c:
+        match c:                # too short, dict isn't necessary
             case '-':
                 return TokenType.DASH
             case '\\':
@@ -184,8 +168,14 @@ class RegexLexer:
 
     @staticmethod
     def __str2token(regex: str):
+        """
+        convert regex string into tokens, this function will not combine any specific syntax,
+        but it does recursively process '[', ']', '\'(escape)
+        :param regex: regex pattern
+        :return: tokens
+        """
         tokens = []
-        state_stack = [RegexLexer.LexState.REGULAR]
+        state_stack = [RegexLexer.LexState.REGULAR] # state stack, escape and '[' need save state
 
         for i in range(len(regex)):
             c = regex[i]
@@ -226,6 +216,11 @@ class RegexLexer:
 
     @staticmethod
     def __find_first_rbracket(process_stack) -> int:
+        """
+        find first '[' in stack
+        :param process_stack:
+        :return: index of first '['
+        """
         i = len(process_stack) - 1
         while process_stack[i][0] != TokenType.LBRACKET:
             i -= 1
@@ -233,18 +228,26 @@ class RegexLexer:
 
     @staticmethod
     def __build_char_class(process_stack, idx):
+        """
+        recursively process char class, cast to
+        :param process_stack:
+        :param idx:
+        :return:
+        """
         char_class = process_stack[idx + 1:]
         try:
-            # '-' at begin or end, juts parse as a char
+            # '-' at begin or end, just parse as a regular char
             if char_class[0][0] == TokenType.DASH:
                 char_class[0] = (TokenType.CHAR, '-', char_class[0][2])
             if char_class[-1][0] == TokenType.DASH:
                 char_class[-1] = (TokenType.CHAR, '-', char_class[-1][2])
 
-            # '^' at the beginning
+            # '^' at the beginning, means '^' is operator
             if char_class[0][1] == '^':
                 char_class[0] = (TokenType.HAT, '^', char_class[0][2])
+
             return TokenType.CHAR_CLASS, char_class, char_class[0][2]
+
         except IndexError:
             raise RuntimeError(f"Empty bucket, idiot. pos: {process_stack[idx][2]}")
 
@@ -276,6 +279,11 @@ class RegexLexer:
 
     @staticmethod
     def __char_class_to_range(tokens):
+        """
+        process char_class, convert to range(or just single character)
+        :param tokens:
+        :return:
+        """
         i = 0
         while i < len(tokens):
             typ, val, pos = tokens[i]
@@ -287,6 +295,11 @@ class RegexLexer:
 
     @staticmethod
     def __process_char_class(tokens):
+        """
+        process tokens, convert and combine char class into a recursive structure
+        :param tokens:
+        :return: tokens
+        """
         new_tokens = []
         process_stack = []
 
@@ -322,6 +335,10 @@ class RegexLexer:
 
     @staticmethod
     def __add_concat(tokens):
+        """
+        explicit add concat operator
+        :return: new tokens with concat operator
+        """
         if len(tokens) == 0:
             return tokens
         new_tokens = [tokens[0]]
@@ -343,7 +360,12 @@ class RegexLexer:
         return new_tokens
 
     @staticmethod
-    def __build_range_map(tokens):
+    def __build_range_map(tokens: Iterable):
+        """
+        parse token, build range map
+        :return: RangeMap
+        """
+
         global MAX_UNICODE_POINT
         range_map = RangeMap()
         range_map.insert(0, MAX_UNICODE_POINT + 1) # cover all Unicode charset
@@ -351,7 +373,7 @@ class RegexLexer:
         # I don't if it's standardized, I just don't want to nest too many
         def handle_char_class(char_ranges: set):
             for item in char_ranges:
-                if item == RegexLexer.HAT_CHAR:
+                if item == RegexLexer.HAT_CHAR:     # spacial operator ^(@^), i don't think it's good idea
                     continue
                 elif isinstance(item, str):
                     range_map.insert_single(item)
@@ -383,7 +405,12 @@ class RegexLexer:
         return whole
 
     @staticmethod
-    def __cvt_char_range(tokens, range_map):
+    def __cvt2range(tokens, range_map):
+        """
+        convert tokens character with range id(equivalence class)
+        :return: new tokens
+        """
+
         whole_set = RegexLexer.__calc_whole_set(range_map)
         new_tokens = []
         def handle_char_class(ranges: set):
@@ -417,26 +444,42 @@ class RegexLexer:
 
 
     @staticmethod
-    def parse(regex: str) -> tuple[list[tuple[TokenType, any, int]], RangeMap]:
+    def parse(regex: str) -> tuple[list[tuple[TokenType, Any, int]], RangeMap]:
 
         tokens = RegexLexer.__str2token(regex)
         tokens = RegexLexer.__process_char_class(tokens)
         RegexLexer.__char_class_to_range(tokens)
         range_map = RegexLexer.__build_range_map(tokens)
 
-        tokens = RegexLexer.__cvt_char_range(tokens, range_map)
+        tokens = RegexLexer.__cvt2range(tokens, range_map)
 
         tokens = RegexLexer.__add_concat(tokens)
 
         return tokens, range_map
 
+    @staticmethod
+    def parse_group(regex_groups: Iterable[tuple[Any, str]]) -> tuple[list[tuple[Any, list]], RangeMap]:
+        """
+        parse group, those group will share same range_map
+        :param regex_groups: list of (group_name, regex pattern)
+        :return: list of (group_name, tokens), range_map
+        """
+        token_groups = [(name, RegexLexer.__str2token(pattern)) for name, pattern in regex_groups]
+        token_groups = list(map(lambda x: (x[0], RegexLexer.__process_char_class(x[1])), token_groups))
+        for _, tokens in token_groups: RegexLexer.__char_class_to_range(tokens)
 
+        chained_tokens = chain(*map(lambda x: x[1], token_groups))
+        range_map = RegexLexer.__build_range_map(chained_tokens)
+
+        token_groups = map(lambda x: (x[0], RegexLexer.__cvt2range(x[1], range_map)), token_groups)
+        token_groups = list(map(lambda x: (x[0], RegexLexer.__add_concat(x[1])), token_groups))
+
+        return token_groups, range_map
 
 
 class RegexCompiler:
     Token = tuple[TokenType, str | set | int, int]
     # 正则表达式 -> token 规则
-
 
     def __init__(self, generator = None):
 
@@ -446,7 +489,6 @@ class RegexCompiler:
         self.__generator = generator
         self._op_stack: list[TokenType] = []
         self._calc_stack: list[tuple[int, NFA, int]] = []
-
 
     def __next_id(self):
         return next(self.__generator)
@@ -640,6 +682,31 @@ class RegexCompiler:
         result[1].range_map = range_map
         return result
 
+    @staticmethod
+    def __set_label(name: Any, nfa: NFA, idx):
+        for state, node_info in nfa.nodes.items():
+            if node_info.accept:
+                node_info.label = name
+                node_info.meta = idx
+
+    def compile_group(self, groups: list[tuple[Any, list[Token]]], range_map):
+        self._op_stack: list[TokenType] = []
+        self._calc_stack: list[tuple[int, NFA, int]] = []
+
+
+        nfa_entries = [(name, self.compile(tokens, range_map)) for name, tokens in groups]
+
+        combined_nfa = NFA(range_map)
+        origin_state = self.__next_id()
+        combined_nfa.add_node(origin_state)
+
+        for idx, entry in enumerate(nfa_entries):
+            name, (origin, nfa, dest) = entry
+            combined_nfa.concat(nfa)
+            combined_nfa.add_edge(origin_state, origin)
+            RegexCompiler.__set_label(name, nfa, idx)
+
+        return origin_state, combined_nfa
 
 
 
@@ -741,6 +808,9 @@ class N2FConvertor:
         return state_id_map
 
 
+
+
+
     def __build_dfa(self, state_id_map):
         """
         this function is responsible for building dfa relying on transition_map
@@ -750,15 +820,10 @@ class N2FConvertor:
         dfa = DFA()
         for state in state_id_map:          # foreach state_id_map add into dfa
             state_id = state_id_map[state]
-            accept = False
-            meta = []
-            for node in state:              # if it has terminated state, inherit its attribute
-                if self.nfa.nodes[node].accept:
-                    accept = True
-                    if self.nfa.nodes[node].meta: meta.append(self.nfa.nodes[node].meta)
-                    break
 
-            dfa.add_node(state_id, accept=accept, meta=meta)
+            node_info = self.__build_node_info(state)
+
+            dfa.add_node(state_id, accept=node_info.accept, label=node_info.label, meta=node_info.meta)
 
         for item in self.__translate_table:     # (origin, symbol) -> dest
             origin, edge = item
@@ -837,6 +902,9 @@ class DFAOptimizer:
         non_terminal = frozenset(non_terminal)
         terminal = frozenset(terminal)
 
+        for state in terminal:
+            print(self.dfa.nodes[state])
+
         return terminal, non_terminal
 
 
@@ -845,7 +913,7 @@ class DFAOptimizer:
             return self.__node_edge_map[state]
         else:
             translate_edge = set()
-            for s in state: translate_edge.add(s)
+            for s in state: translate_edge.add(self.__node_edge_map[s])
             return translate_edge
 
     def __goto(self, state, symbol):
@@ -876,7 +944,10 @@ class DFAOptimizer:
         :return: state sets
         """
         t, n = self.__init__split()
-        divided_sets: set[frozenset[int]] = {t, n}
+        divided_sets: set[frozenset[int]] = set()
+        if t: divided_sets.add(t)
+        if n: divided_sets.add(n)
+
 
         work_queue = WorkPriorityQueue(lambda x: len(x))
         work_queue.push(DFAOptimizer.min_set(t, n))
@@ -893,8 +964,7 @@ class DFAOptimizer:
                     continue
 
                 divided_sets.remove(divided)
-                divided_sets.add(intersect)
-                divided_sets.add(diff)
+                divided_sets.update([intersect, diff])
 
                 if divided in work_queue:
                     work_queue.remove(divided)
@@ -921,16 +991,12 @@ class DFAOptimizer:
             node_info = node_info_table.get(state, NodeInfo(accept=False))
             node_info_table[state] = node_info
 
-            if node_info.meta is None:
-                node_info.meta = []
-
-
             for origin_state in divided:
                 origin_node_info = self.dfa.nodes[origin_state]
                 node_info.accept = node_info.accept or origin_node_info.accept
                 node_info.label = origin_node_info.label
 
-                if origin_node_info.meta: node_info.meta.append(origin_node_info.meta)
+                # todo high priority first
 
         return set_state_table, node_info_table
 
@@ -950,10 +1016,14 @@ class DFAOptimizer:
         return state_new_states_table
 
     def __build_connect_table(self, state_new_states_table):
+        """
+        build new states edge
+        :param state_new_states_table:
+        :return:
+        """
         connect_table = {}
 
-        for k, dest in self.dfa.edges.items():
-            origin, symbol = k
+        for (origin, symbol), dest in self.dfa.edges.items():
             origin_set, dest_set = state_new_states_table[origin], state_new_states_table[dest]
 
             for new_origin in origin_set:
@@ -966,6 +1036,10 @@ class DFAOptimizer:
 
 
     def __build_dfa(self, connect_table: dict, set_state_table: dict, node_info_table):
+        """
+        build a new minimized DFA
+        :return: minimized DFA
+        """
         new_dfa = DFA()
         new_dfa.range_map = self.dfa.range_map
 
@@ -973,13 +1047,13 @@ class DFAOptimizer:
             node_info = node_info_table[state]
             new_dfa.add_node(state, node_info.accept, node_info.label, node_info.meta)
 
-        for k, dest in connect_table.items():
-            origin, edge = k
+        for (origin, edge), dest in connect_table.items():
             new_dfa.add_edge(origin, dest, edge)
 
         return new_dfa
 
     def __find_new_origin(self, set_state_table: dict):
+
         for k, v in set_state_table.items():
             if self.origin in k:
                 return v
@@ -987,14 +1061,19 @@ class DFAOptimizer:
         raise RuntimeError("No new origin found")
 
 
-    def optimize(self):
-        divided_sets = self.__minimize()
+    def __reduce_edge(self):
+        # todo
+        pass
 
-        set_state_table, node_info_table = self.__build_node_table(divided_sets)
-        state_new_states_table = self.__build_state_new_states_table(divided_sets, set_state_table)
-        connect_table = self.__build_connect_table(state_new_states_table)
 
-        new_origin = self.__find_new_origin(set_state_table)
+    def optimize(self) -> tuple[int, DFA]:
+        divided_sets = self.__minimize()                # hopcroft minimization
 
-        return new_origin, self.__build_dfa(connect_table, set_state_table, node_info_table)
+        set_state_table, node_info_table = self.__build_node_table(divided_sets)       # convert to new state
+        state_new_states_table = self.__build_state_new_states_table(divided_sets, set_state_table) # mapping state -> new state relation
+        connect_table = self.__build_connect_table(state_new_states_table)          # mapping new state edges
+
+        new_origin = self.__find_new_origin(set_state_table)                        # find new origin state
+
+        return new_origin, self.__build_dfa(connect_table, set_state_table, node_info_table)  #build new dfa
 

@@ -41,7 +41,6 @@ class TreeRangeNode:
     def set_meta(self, meta):
         self.meta = meta
 
-
 class RangeMap:
     """
     区间映射，目前不确定用什么实现，目前最简实现非平衡的树

@@ -8,4 +8,5 @@ class Test(unittest.TestCase):
         print(s.match('a'))
         print(s.match('b'))
         print(s.match('c'))
-        print(s.match('d'))
+
+    a, (b, c) = (1, (2, 3))
