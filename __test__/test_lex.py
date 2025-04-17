@@ -3,13 +3,15 @@
 # @date: 2025/04/10
 # @description: 测试用，屁用没有
 import unittest
+from tkinter.constants import DISABLED
 
 from graphviz import Digraph
 
+from common.common_type import EPSILON
 from common.lexer import Lexer
 from common.replace_util import ReplaceUtil
-from common.common_type import EPSILON
-from lex.regex_compiler import RegexCompiler, N2DConvertor, RegexLexer, TokenType, DFAOptimizer
+from lex.nfa import NFA
+from lex.regex_compiler import RegexCompiler, RegexLexer, TokenType, N2DConvertor, DFAOptimizer
 
 # pattern = "([我-是]|苏联|[内务部])部长*贝利亚，废物贝利亚?"
 pattern = "[a-zA-Z0-9_-]+@[a-zA-Z0-9_-]+[\.a-zA-Z0-9_-]+"
@@ -25,7 +27,7 @@ label_convertor = ReplaceUtil() \
     .add_replace(EPSILON, "ε")
 
 
-def range_map(fa):
+def range_table(fa):
     id_class_map = {}
 
     def handler(node, *_):
@@ -60,7 +62,7 @@ def draw(com_fa, filename):
     # fa_graph.attr(splines='true')  # 使用平滑曲线
 
 
-    id_range_map = range_map(fa)
+    id_range_table = range_table(fa)
 
     for item in fa.nodes:
         node = fa.nodes[item]
@@ -76,15 +78,19 @@ def draw(com_fa, filename):
     for edge in fa.edges:
         origin, label = edge
 
-        label:str = id_range_map[label]
-        if label == "[\x00-􏿿]":
-            label = '～'
+        if label != EPSILON:
+            label: str = id_range_table[label]
 
-        label = label.replace('\x00', '\\0')
+            label = label.replace('\x00', '\\0')
+
+            if label == "[\x00-􏿿]":
+                label = '～'
 
 
+        # print(origin, label)
 
-        if isinstance(fa.edges[edge], set):
+
+        if isinstance(fa, NFA):
             for dest in fa.edges[edge]:
                 fa_graph.edge(str(origin), str(dest), label=str(label))
         else:
@@ -94,7 +100,6 @@ def draw(com_fa, filename):
 
             else:
                 fa_graph.edge(str(origin), str(fa.edges[edge]), label=str(label))
-
 
     fa_graph.render(view=True, cleanup=True)
 
@@ -119,44 +124,52 @@ class TestRegexLex(unittest.TestCase):
 class TestLex(unittest.TestCase):
     def test_dfa(self):
         compiler = RegexCompiler()
-        tokens, rm = RegexLexer.parse(pattern)
-        beg, nfa, end = compiler.compile(tokens, rm)
+
+        # tokens_entries, rm = RegexLexer.parse_group([("abc", "abc"), ("abcd", "abcd?")])
+        groups, rm = RegexLexer.parse(r"if|else|int|long|double|([^0-9][a-zA-Z]+[0-9a-zA-Z]+)")
+        beg, nfa, end = compiler.compile(groups, rm)
+
+
         # draw((beg, nfa), "nfa")
 
-        cvt = N2DConvertor(nfa, beg)
+        cvt = N2DConvertor(nfa, beg, enable_multi_label=True)
 
-        cvt_dfa = cvt.convert()
+        origin, dfa = cvt.convert()
+        # print(dfa.nodes)
+        # draw((origin, dfa), "dfa_")
 
-
-        opt = DFAOptimizer(dfa=cvt_dfa[1], origin=cvt_dfa[0])
+        opt = DFAOptimizer(dfa=dfa, origin=origin, label_type=DISABLED)
 
         origin, dfa = opt.optimize()
 
 
-        draw((origin, dfa), "dfa")
-
-
+        # draw((origin, dfa), "dfa")
+        # print()
         state = origin
-        for c in "hanjunjie@tgu.edu.cn":
-            c = ord(c)
-            c = dfa.range_map.search(c).meta
+        for c in "int":
+            c = rm.search(c).meta
             state = dfa.translate_to(state, c)
-
             print(dfa.nodes[state])
+
+
+        # state = origin
+        # for c in "hanjunjie@tgu.edu.cn":
+        #     c = ord(c)
+        #     c = dfa.range_map.search(c).meta
+        #     state = dfa.translate_to(state, c)
+
+            # print(dfa.nodes[state])
 
     def test_lexer(self):
-        lexer = Lexer([("keyword", "if|else|long"),
-                       ("identifier", "[^0-9][a-z]+"), ("op", r"\+|-|\*|/")], minimization=True)
+        lexer = Lexer([("A", r"if|else|int|long|double"), ("B", r"[^0-9][_A-Za-z0-9]+")], minimization=False)
         lexer.check()
         origin, dfa = lexer.origin, lexer.dfa
-        print(len(dfa.nodes), len(dfa.edges))
+
+        print(len(dfa.nodes), dfa.edges.__len__())
         # draw((origin, dfa), "dfa")
 
-
-        print(list(filter(lambda x: x.accept,dfa.nodes.values())))
-
         state = origin
-        for c in "else":
+        for c in "if":
             c = dfa.range_map.search(c).meta
             state = dfa.translate_to(state, c)
-            print(dfa.nodes[state])
+            print(state, dfa.nodes[state])

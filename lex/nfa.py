@@ -125,13 +125,13 @@ class NFA:
         for item in nodes:
             t_nodes = self.translate_to(item, edge)
             if t_nodes is not None:
-                result |= t_nodes
+                result.update(t_nodes)
 
         return result
 
-    def kleene_closure(self, nodes: frozenset[StateType] | set[StateType], edge: SymbolType) -> set[StateType]:
+    def subset_closure(self, nodes: frozenset[StateType] | set[StateType], edge: SymbolType) -> set[StateType]:
         """
-        kleene closure, I_a = ε-closure(J)
+        I_a = ε-closure(J)
         :param nodes: 'I' set
         :param edge: 'a' transition
         :return: 'I_a' set

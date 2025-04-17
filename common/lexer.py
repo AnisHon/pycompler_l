@@ -1,8 +1,9 @@
 import logging
-from typing import Iterable, Any
+from typing import Any
 
 from lex.dfa import DFA
 from lex.regex_compiler import RegexLexer, RegexCompiler, DFAOptimizer, N2DConvertor
+
 
 class Lexer:
 
@@ -16,8 +17,6 @@ class Lexer:
 
         cvt = N2DConvertor(nfa, origin, enable_multi_label=self.__minimization)
         origin, dfa = cvt.convert()
-        # return origin, dfa
-
 
         opt_type = DFAOptimizer.LabelType.MULTI if self.__minimization else DFAOptimizer.LabelType.SINGLE
         opt = DFAOptimizer(dfa, origin, opt_type)
@@ -33,7 +32,8 @@ class Lexer:
 
         priority_map = {val[0]: idx for idx, val in enumerate(self.__groups)}
 
-        terminal_nodes = filter(lambda x: x.accept, dfa.nodes.values())
+        terminal_nodes = list(filter(lambda x: x.accept, dfa.nodes.values()))
+
 
         for node_info in terminal_nodes:
 
@@ -72,6 +72,12 @@ class Lexer:
         diff = names - all_reachable_labels
         if diff:
             logging.warning("The following name are not reachable: {}".format(diff))
+            cnt += 1
+
+
+        has_terminal = any(item.accept for item in self.__dfa.nodes.values())
+        if not has_terminal:
+            logging.warning("No Terminal Node!")
             cnt += 1
 
         if cnt == 0:

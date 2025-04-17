@@ -4,7 +4,7 @@ StateType = int
 SymbolType = str | int
 
 # 空
-EPSILON = ""
+EPSILON = "@ε"
 EMPTY_CHAR = EPSILON
 
 class NodeInfo:

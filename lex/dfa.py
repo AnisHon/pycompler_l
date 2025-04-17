@@ -10,6 +10,7 @@ class DFA:
         self.range_map = None
         self.__nodes: NodeInfoMap = {}
         self.__edges: DFAEdgeType = {}
+        self.alphabet = set()
 
     @property
     def nodes(self) -> NodeInfoMap:
@@ -36,10 +37,15 @@ class DFA:
         :param dest: 目标节点（状态）
         :param edge: 边字符（转移）
         """
+
         if origin not in self.nodes or dest not in self.nodes:
             node = dest if origin not in self.nodes else origin
             raise RuntimeError("Unknown node: " + str(node))
 
+        if (origin, edge) in self.edges:
+            raise RuntimeError("Duplicate edge: " + str((origin, edge)))
+
+        self.alphabet.add(edge)
         self.edges[(origin, edge)] = dest
 
     def translate_to(self, origin: StateType, edge: SymbolType) -> StateType | None:

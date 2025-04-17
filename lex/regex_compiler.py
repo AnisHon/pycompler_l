@@ -2,11 +2,13 @@
 # @author: anishan
 # @date: 2025/04/10
 # @description: 正则表达式编译，负责 正则解析 正则->NFA 和 NFA->DFA 以及 DFA简化
+
 from itertools import chain
 from typing import Any
-from collections import deque
+from collections import deque, defaultdict
 from collections.abc import Iterable
 from enum import Enum, auto
+
 from common.IdGenerator import id_generator
 from common.range_map import RangeMap
 from common.common_type import EPSILON, SymbolType, NodeInfo
@@ -78,7 +80,6 @@ class TokenType(Enum):
 
 
 
-
 class RegexLexer:
     HAT_CHAR = "@^" # spacial mark for ^
 
@@ -144,7 +145,7 @@ class RegexLexer:
             case ']':
                 return TokenType.RBRACKET
             case '[':
-                return TokenType.LBRACKET
+                return TokenType.CHAR               # do not support for nesting char class
             case _:
                 return TokenType.CHAR
 
@@ -463,6 +464,9 @@ class RegexLexer:
 
 
 class RegexCompiler:
+    """
+    compile Tokens into NFA
+    """
     Token = tuple[TokenType, str | set | int, int]
     # 正则表达式 -> token 规则
 
@@ -576,7 +580,6 @@ class RegexCompiler:
 
         self._calc_stack.append((beg, nfa, end))
 
-
     def __handle_left_rparen(self):
         # 计算（清空）括号
         op = self._op_stack.pop()
@@ -617,7 +620,7 @@ class RegexCompiler:
     def __build_calc_map(self):
         # god jesus, why python syntax dependency resolver so sucks, this function is stupid
 
-        # expand point, if need new function change this table
+        # expand point, if it needs new function, change this table
         self.__CALC_MAP = {
             TokenType.STAR: self.__do_calc_closure,
             TokenType.OR: self.__do_calc_alter,
@@ -671,8 +674,6 @@ class RegexCompiler:
         result[1].range_map = range_map
         return result
 
-
-
     def compile_group(self, groups: list[tuple[Any, list[Token]]], range_map):
         self._op_stack: list[TokenType] = []
         self._calc_stack: list[tuple[int, NFA, int]] = []
@@ -693,13 +694,14 @@ class RegexCompiler:
             node_info.label = name
             node_info.priority = idx
 
-        return origin_state, combined_nfa
+        combined_nfa.range_map = range_map
 
+        return origin_state, combined_nfa
 
 
 class N2DConvertor:
     """
-    NFA to DFA Convertor
+    Convert NFA to DFA
     """
 
     def __init_state_table(self):
@@ -771,15 +773,15 @@ class N2DConvertor:
 
 
 
-    def __kleene_calc(self, state: frozenset[int]):
+    def __subset_construct(self, state: frozenset[int]):
         """
-        calculate kleene closure, meanwhile add new combination of states into queue
+        construct subset, and add new combination of states into queue
         :param state: multi nfa states correspond to a nfa state
         """
         connected_edge = self.__get_connected(state)
         new_states = set()
         for edge in connected_edge:     # foreach edges(symbols), calculate kleene_closure, fill into transition_table
-            connected = frozenset(self.nfa.kleene_closure(state, edge))
+            connected = frozenset(self.nfa.subset_closure(state, edge))
             self.__translate_table[(state, edge)] = connected
             new_states.add(connected)
 
@@ -802,19 +804,23 @@ class N2DConvertor:
         for state in finished_state:
             state_id_map[state] = next(generator)
 
+
         return state_id_map
 
 
 
     @staticmethod
-    def __priority_gt(node1: NodeInfo, node2: NodeInfo):
+    def __min_priority(node1: NodeInfo, node2: NodeInfo):
         if node1.priority is None and node2.priority is not None:
-            return True
+            return node2
 
         if node2.priority is None:
-            return False
+            return node1
 
-        return node1.priority > node2.priority
+        if node1.priority > node2.priority:
+            return node2
+        else:
+            return node1
 
     def __build_node_info(self, states) -> NodeInfo:
 
@@ -822,19 +828,21 @@ class N2DConvertor:
         temp_labels = set()
 
 
-        terminal_state = filter(lambda x: self.nfa.nodes[x].accept, states)
+        terminal_state = list(filter(lambda x: self.nfa.nodes[x].accept, states))
+
+        # print(terminal_state)
 
         for state in terminal_state:  # if it has terminated state, inherit its attribute
+
             node = self.nfa.nodes[state]
-
-
+            final_node.accept = True
             if self.enable_multi_label:
                 temp_labels.add(node.label)
 
 
-            elif N2DConvertor.__priority_gt(final_node, node):
+            else:
+                final_node = N2DConvertor.__min_priority(final_node, node)
 
-                final_node = node
 
 
         if self.enable_multi_label:
@@ -885,7 +893,7 @@ class N2DConvertor:
             if state in finished_state:  # already calculated, skip
                 continue
 
-            self.__kleene_calc(state)    # closure
+            self.__subset_construct(state)    # closure
             finished_state.add(state)
 
 
@@ -900,7 +908,8 @@ class N2DConvertor:
 
 class DFAOptimizer:
     """
-    DFA化简 使用Hopcroft算法
+    Minimize DFA implemented by Hopcroft DFA Minimization algorithm,
+    this class try to modular and make the whole process more clear
     """
 
     class LabelType(Enum):
@@ -908,7 +917,11 @@ class DFAOptimizer:
         MULTI = auto()
         DISABLE = auto()
 
-    def __build_node_edge_map(self):
+    def __build_node_edge_table(self):
+        """
+        build table mapping from state id to symbols
+        :return:
+        """
         for state, symbol in self.dfa.edges:
             symbols = self.__node_edge_map.get(state, set())
             symbols.add(symbol)
@@ -918,15 +931,24 @@ class DFAOptimizer:
             self.__node_edge_map[state] = self.__node_edge_map.get(state, set())
 
 
-    def __init__(self, dfa: DFA, origin: int, label_type: LabelType = LabelType.SINGLE):
+    def __init__(self, dfa: DFA, origin: int, label_type: LabelType=LabelType.SINGLE, check: bool=True):
+        """
+        construct DFA optimizer, this
+        :param dfa:
+        :param origin:
+        :param label_type:
+        :param check:
+        """
+        self.__check = check
         if not isinstance(dfa, DFA):
             raise TypeError(f"dfa expected: {DFA}, got:{type(dfa)}")
 
         self.dfa: DFA = dfa
         self.origin = origin
         self.__node_edge_map = {}
-        self.__build_node_edge_map()
+        self.__build_node_edge_table()
         self.__label_type = label_type
+        self.__generator = id_generator()
 
     @property
     def label_type(self):
@@ -939,97 +961,106 @@ class DFAOptimizer:
         :return:
         """
 
-        terminal_groups = {}
+        groups = defaultdict(set)               # all divided group
+
+        terminal_set = defaultdict(set)         # terminal divided group
 
         for state, node_info in self.dfa.nodes.items():
 
-            if self.label_type == self.LabelType.DISABLE:
+            if self.label_type == self.LabelType.DISABLE:       # disable label, use accept only
                 k = node_info.accept
             else:
-                k = node_info.label
+                k = node_info.label                             # split by label
 
-            labeled_terminals = terminal_groups.get(k, set())
-            labeled_terminals.add(state)
-            terminal_groups[k] = labeled_terminals
+            groups[k].add(state)                                # group to groups
+
+            if node_info.accept:
+                terminal_set[node_info.label].add(state)        # group split for terminal_set
 
 
-        return map(lambda x: frozenset(x), terminal_groups.values())
+
+
+        return map(lambda x: frozenset(x), groups.values()), map(lambda x: frozenset(x), terminal_set.values())
 
 
     def __get_translate_edge(self, state: int | Iterable):
+        """
+        get all connected symbols
+        :param state: states or states,
+        """
         if isinstance(state, int):
             return self.__node_edge_map[state]
         else:
             translate_edge = set()
-            for s in state: translate_edge.add(self.__node_edge_map[s])
+            for s in state: translate_edge.update(self.__node_edge_map[s])
             return translate_edge
 
     def __goto(self, state, symbol):
+        """
+        same as GOTO in nfa
+        """
         return self.dfa.translate_to(state, symbol)
 
-    def __predicate_any_in(self, state, dest_set):
-        all_edges = self.__get_translate_edge(state)
-        return any(self.__goto(state, edge) in dest_set for edge in all_edges)
-
-    def __get_pre(self, min_set: frozenset[int]) -> frozenset[int]:
-        return frozenset(filter(lambda x: self.__predicate_any_in(x, min_set), self.dfa.nodes.keys()))
+    def __get_pre(self, min_set_: frozenset[int], symbol) -> frozenset[int]:
+        all_states = self.dfa.nodes.keys()
+        return frozenset({state for state in all_states if self.__goto(state, symbol) in min_set_})
 
 
     @staticmethod
     def min_set(x, y):
-        if len(x) == 0:
-            return y
-        elif len(y) == 0:
-            return x
-        elif len(x) == 0 and len(y) == 0:
-            raise RuntimeError("Internal Error set x y is empty")
 
-        return x if len(x) < len(y) else y
+        return min(x, y, key=lambda x_: len(x_))
 
     def __minimize(self):
         """
         hopcroft minimize algorithm
         :return: state sets
         """
-        initial_split = self.__init_split()
+        initial_split, terminated_split = self.__init_split()
 
-        divided_sets: set[frozenset[int]] = {item for item in initial_split if item}
+        block_set: set[frozenset[int]] = {item for item in initial_split if item}   # set of Equivalence Class
 
 
         work_queue = WorkPriorityQueue(lambda x: len(x))
-        work_queue.push(min(divided_sets, key=lambda x: len(x)))
+        work_queue.push(*terminated_split)
 
 
-        while (min_set := work_queue.pop()) is not None:
-            set_a: frozenset[int] = self.__get_pre(min_set)   # A \in { a | f(a, c) in min_set}
+        while (min_set := work_queue.pop()) is not None:                    # almost line to line translate from origin pseudocode
 
-            for divided in list(divided_sets):
-                intersect: frozenset[int] = divided & set_a
-                diff: frozenset[int] = divided - set_a
-
-                if not (intersect and diff):
+            for symbol in self.dfa.alphabet:
+                set_a: frozenset[int] = self.__get_pre(min_set, symbol)
+                if not set_a:
                     continue
 
-                divided_sets.remove(divided)
-                divided_sets.update([intersect, diff])
+                for block in list(block_set):
 
-                if divided in work_queue:
-                    work_queue.remove(divided)
-                    work_queue.push(intersect, diff)
-                else:
-                    work_queue.push(DFAOptimizer.min_set(intersect, diff))
+                    intersect: frozenset[int] = block & set_a
+                    diff: frozenset[int] = block - set_a
+
+                    if not (intersect and diff):
+                        continue
+
+                    block_set.remove(block)
+                    block_set.update([intersect, diff])
+
+                    if block in work_queue:
+                        work_queue.remove(block)
+                        work_queue.push(intersect, diff)
+                    else:
+                        work_queue.push(DFAOptimizer.min_set(intersect, diff))
 
 
-        return divided_sets
+        return block_set
 
     def __build_node_info(self, divided_set):
         """
         build node info (new state), label vary from label type
         :param divided_set: state (original dfa) set
-        :return:
         """
+
         node_info: NodeInfo = NodeInfo(accept=False)
         temp_labels: set = set()
+
         for origin_state in divided_set:
             origin_node_info = self.dfa.nodes[origin_state]
 
@@ -1038,13 +1069,14 @@ class DFAOptimizer:
 
             node_info.accept = True
 
-
-
             if self.label_type == self.LabelType.SINGLE:
+
                 node_info.label = origin_node_info.label
                 node_info.meta = origin_node_info.meta
                 node_info.priority = origin_node_info.priority
+
                 break
+
             elif self.label_type == self.LabelType.MULTI:
                 label = origin_node_info.label
                 labels = origin_node_info.label if isinstance(label, Iterable) else {label}
@@ -1055,6 +1087,7 @@ class DFAOptimizer:
         if self.label_type == self.LabelType.MULTI and node_info.accept:
             node_info.label = frozenset(temp_labels)
 
+
         return node_info
 
     def __build_node_table(self, divided_sets: set[frozenset[int]]) -> tuple[dict, dict]:
@@ -1062,7 +1095,7 @@ class DFAOptimizer:
         assign id, node_info for each state sets (new state)
         :return:
         """
-        generator = id_generator()
+        generator = self.__generator
 
         set_state_table = {}    # state set -> new state id
         node_info_table = {}    # new state -> node info
@@ -1070,46 +1103,47 @@ class DFAOptimizer:
 
         for divided_set in divided_sets:        # divided_set -> new state
             state = next(generator)
-
             set_state_table[divided_set] = state
 
             node_info = self.__build_node_info(divided_set)
             node_info_table[state] = node_info
 
-
         return set_state_table, node_info_table
 
-    def __build_state_new_states_table(self, divided_sets: set[frozenset[int]], set_state_table):
+    @staticmethod
+    def __build_state_block_ids_table(divided_sets: set[frozenset[int]], set_state_table):
+        """
+        build a table mapping from state_id of original dfa to current dfa state
+        :param divided_sets:
+        :param set_state_table:
+        :return:
+        """
         state_new_states_table = {}
 
-        for state in self.dfa.nodes.keys():
-            for divided in divided_sets:
-                if state not in divided:
-                    continue
-
-                ids = state_new_states_table.get(state, set())
-                ids.add(set_state_table[divided])
-                state_new_states_table[state] = ids
-
+        for divided_set in divided_sets:
+            for old_state in divided_set:
+                state_new_states_table[old_state] = set_state_table[divided_set]
 
         return state_new_states_table
 
-    def __build_connect_table(self, state_new_states_table):
+    def __build_connect_table(self, state_block_id_table, block_id_table):
         """
         build new states edge
-        :param state_new_states_table:
         :return:
         """
         connect_table = {}
 
-        for (origin, symbol), dest in self.dfa.edges.items():
-            origin_set, dest_set = state_new_states_table[origin], state_new_states_table[dest]
+        for block, new_origin in block_id_table.items():
 
-            for new_origin in origin_set:
-                for new_dest in dest_set:
-                    connect_table[(new_origin, symbol)] = new_dest
+            if self.__check:        # check consistency really cost a lot, can be disabled
+                self.__check_block_consistency(block, state_block_id_table) # check consistency
 
-
+            old_origin = next(iter(block))
+            edges = self.__get_translate_edge(old_origin)
+            for edge in edges:
+                old_dest = self.dfa.translate_to(old_origin, edge)
+                new_dest = state_block_id_table[old_dest]
+                connect_table[(new_origin, edge)] = new_dest            # add relations to table
 
         return connect_table
 
@@ -1140,19 +1174,58 @@ class DFAOptimizer:
         raise RuntimeError("No new origin found")
 
 
-    def __reduce_edge(self):
-        # todo
-        pass
+    # def __reduce_edge(self, connect_table: dict):         # maybe next time
+    #     origin_edges = {}
+    #     for origin, edge in connect_table:
+    #         edge_set = origin_edges.get(origin, set())
+    #         edge_set.add(edge)
+    #         origin_edges[origin] = edge_set
+    #
+    #     same = None
+    #     for edge_set in origin_edges.values():
+    #         if same is None:
+    #             same = edge_set
+    #         else:
+    #             same = same & edge_set
 
+
+
+    def __check_block_consistency(self, block: frozenset[int], state_block_table: dict) -> None:
+        """
+        检查一个 block 内部状态在所有符号上的转移是否一致。
+        一旦发现不一致（即存在不同的目标 block），立即抛出异常。
+
+        :param block: 当前状态划分（frozenset[int]）
+        :param state_block_table: 原状态 -> 所在划分块代表状态（合并后用于重映射）
+        :raises RuntimeError: 若 block 内存在任一符号上跳转不一致
+        """
+        all_symbols = self.dfa.alphabet
+
+        for symbol in all_symbols:
+            target_blocks = set()
+            target2states = defaultdict(set)
+
+            for state in block:
+                dest = self.dfa.translate_to(state, symbol)
+                if dest is None:
+                    continue
+                block_id = state_block_table.get(dest)
+                target_blocks.add(block_id)
+
+                target2states[block_id].add(state)
+
+
+            if len(target_blocks) > 1:
+                raise RuntimeError(f"Inconsistent transition in block {block} on symbol '{symbol}': {target_blocks}\n{target2states}")
 
     def optimize(self) -> tuple[int, DFA]:
-        divided_sets = self.__minimize()                # hopcroft minimization
+        block_set = self.__minimize()                # hopcroft minimization
 
-        set_state_table, node_info_table = self.__build_node_table(divided_sets)       # convert to new state
-        state_new_states_table = self.__build_state_new_states_table(divided_sets, set_state_table) # mapping state -> new state relation
-        connect_table = self.__build_connect_table(state_new_states_table)          # mapping new state edges
+        block_id_table, node_info_table = self.__build_node_table(block_set)       # convert to new state id
+        state_block_ids_table = DFAOptimizer.__build_state_block_ids_table(block_set, block_id_table) # mapping state -> new state
+        connect_table = self.__build_connect_table(state_block_ids_table, block_id_table)          # mapping new state edges
 
-        new_origin = self.__find_new_origin(set_state_table)                        # find new origin state
+        new_origin = self.__find_new_origin(block_id_table)                        # find new origin state
 
-        return new_origin, self.__build_dfa(connect_table, set_state_table, node_info_table)  #build new dfa
+        return new_origin, self.__build_dfa(connect_table, block_id_table, node_info_table)  #build new dfa
 
