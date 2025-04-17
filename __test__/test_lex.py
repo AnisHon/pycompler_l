@@ -8,7 +8,7 @@ from tkinter.constants import DISABLED
 from graphviz import Digraph
 
 from common.common_type import EPSILON
-from common.lexer import Lexer
+from lex.lexer import Lexer
 from common.replace_util import ReplaceUtil
 from lex.nfa import NFA
 from lex.regex_compiler import RegexCompiler, RegexLexer, TokenType, N2DConvertor, DFAOptimizer
