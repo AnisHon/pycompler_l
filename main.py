@@ -13,7 +13,7 @@ class Token:
         return f"[{self.line_num}]{self.kind}( {self.value} )"
 
     def __repr__(self):
-        return f"\"self.__str__()\""
+        return f"\"{self.__str__()}\""
 
 # 定义词法规则（正则表达式）
 token_spec = [

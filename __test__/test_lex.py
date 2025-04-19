@@ -161,7 +161,7 @@ class TestLex(unittest.TestCase):
             # print(dfa.nodes[state])
 
     def test_lexer(self):
-        lexer = Lexer([("A", r"if|else|int|long|double"), ("B", r"[^0-9][_A-Za-z0-9]+")], minimization=False)
+        lexer = Lexer([("keyword", r"if|else|int|long|double"), ("identifier", r"[^0-9][_A-Za-z0-9]+")], minimization=False)
         lexer.check()
         origin, dfa = lexer.origin, lexer.dfa
 
@@ -169,7 +169,7 @@ class TestLex(unittest.TestCase):
         # draw((origin, dfa), "dfa")
 
         state = origin
-        for c in "if":
+        for c in "double":
             c = dfa.range_map.search(c).meta
             state = dfa.translate_to(state, c)
             print(state, dfa.nodes[state])

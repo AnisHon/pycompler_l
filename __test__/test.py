@@ -5,12 +5,13 @@ import unittest
 class Test(unittest.TestCase):
     def test(self):
 
-        a = {}
-        a[tuple()] = 10
-        print(a[tuple()])
-        s = re.compile('[^abcd-e]')
-        print(s.match('a'))
-        print(s.match('b'))
-        print(s.match('c'))
+        token_specs = [
+            ("|".join(['AA', 'BB', 'CC']), "expr"),
+            (".", "terminal"),
+        ]
 
-    a, (b, c) = (1, (2, 3))
+        token_regex = "|".join(f"(?P<{name}>{pattern})" for pattern, name in token_specs if name)
+        token_pattern = re.compile(token_regex, re.VERBOSE)
+
+        for c in token_pattern.finditer("AAaBBbCCcsdfsdf"):
+            print(c.lastgroup, c.group())
