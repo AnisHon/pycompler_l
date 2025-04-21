@@ -1,9 +1,15 @@
+# @encoding: utf-8
+# @author: anishan
+# @date: 2025/04/17
+# @description:
+import itertools
 from dataclasses import dataclass
+from typing import Iterator
 
 ExpressionType = tuple[tuple['ProductionItem', ...], ...]
 PARSER_EPSILON = tuple()
 PARSER_EMPTY_CHAR = PARSER_EPSILON
-END_CHAR = "$$$"
+PARSER_END = "$$$"
 
 @dataclass(frozen=True)
 class ProductionItem:
@@ -24,7 +30,7 @@ class ProductionItem:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, ProductionItem):
             return False
-        return self.name == other.name
+        return self.name == other.name and self.is_terminated == other.is_terminated
 
 @dataclass(frozen=True)
 class Production:
@@ -62,11 +68,11 @@ class Production:
     def production_size(self, idx) -> int:
         return len(self.expression[idx])
 
-    def get(self, i: int, j: int):
+    def get(self, i: int, j: int) -> ProductionItem:
         """
         get ProductionItem
-        :param i: index of alternative
-        :param j: index of production
+        :param i: alternative index
+        :param j: item index in a production
         """
         return self.expression[i][j]
 
@@ -138,16 +144,83 @@ class WeakProduction:
 @dataclass(frozen=True)
 class LR1Item:
     """
-    LR1项目集, LR1 item, one lookahead char
+    LR1 item, one lookahead char
+    LR1 item require single production without alternatives
     """
     production: Production
-    position: int               # dot position
-    lookahead: frozenset[str]   # 展望串
+    position: int                       # dot position
+    lookahead: frozenset[str] | None    # 展望串
+
+    @property
+    def size(self):
+        """
+        production size
+        """
+        return self.production.production_size(0)
+
+    @property
+    def max_pos(self):
+        """
+        max position, usually equals size + 1, meaning this item needs to be reduced
+        """
+        return self.size
+
+    def is_end(self):
+        """
+        :return: if item reaches the end of production
+        """
+        return self.size == self.position
 
     def __post_init__(self):
-        if not 0 <= self.position <= len(self.lookahead):
+        if self.production.alternation_size > 1:
+            raise ValueError("LR1Item can only have one alternation")
+        elif not 0 <= self.position <= self.size:
             raise IndexError(f"position out of range, max: {len(self.lookahead)}, current: {self.position}")
 
+    def get_iter(self) -> Iterator[ProductionItem]:
+        """
+        next production item
+        """
+        return itertools.islice(self.production.expression[0], self.position, None)
+
+    def get_next(self) -> ProductionItem | None:
+        try:
+            return next(self.get_iter())
+        except StopIteration:
+            return None
+
+    def move_next(self) -> 'LR1Item':
+        if self.is_end():
+            raise IndexError("This LR1Item have already ended")
+
+        return LR1Item(self.production, self.position + 1, self.lookahead)
 
 
+    def __hash__(self):
+        return hash((self.production, self.position, self.lookahead))
 
+    def __eq__(self, other):
+        if type(self) is not type(other):
+            return False
+        return self.production == other.production and \
+            self.position == other.position and \
+            self.lookahead == other.lookahead
+
+    def __str__(self):
+        item_str = []
+
+        i = 0
+        for i in range(self.size):
+            if i == self.position:
+                item_str.append('·')
+            item_str.append(self.production.get(0, i).name)
+
+
+        if i + 1 == self.position:
+            item_str.append('·')
+
+
+        return f"[{self.production.name} -> {' '.join(item_str)}, {set(self.lookahead)}]"
+
+    def __repr__(self):
+        return self.__str__()
