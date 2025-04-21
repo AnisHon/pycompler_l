@@ -6,10 +6,8 @@ import enum
 from collections import defaultdict, deque
 from dataclasses import dataclass
 
-from torchgen.api.types import voidT
-
 from common.IdGenerator import id_generator
-from parser.parser_type import Production, PARSER_END, LR1Item, PARSER_EPSILON, ProductionItem
+from parser.parser_type import Production, PARSER_END, LR1Item, PARSER_EPSILON, ProductionItem, ParseToken
 from parser.util import compute_first_set
 
 LR1ItemSet = frozenset[LR1Item]
@@ -66,7 +64,7 @@ class LR1Parser:
 
         return production_id_table, id_production_table
 
-    def __compute_lookahead(self, item) -> frozenset[str]:
+    def __compute_lookahead(self, item) -> frozenset[ParseToken]:
         """
         calculate lookahead for the next item,
         for example, A -> a·BC... than this function will calculate lookahead for B
@@ -74,7 +72,7 @@ class LR1Parser:
         :return: the lookahead frozenset
         """
         item_iter = item.get_iter()
-        lookahead: set[str] = set()
+        lookahead: set[ParseToken] = set()
         try:
             next(item_iter)             # skip the next item, because it's the ower of this lookahead set
         except StopIteration:
@@ -85,19 +83,17 @@ class LR1Parser:
         for production_item in item_iter:
             pos += 1
             if production_item.is_terminated:       # encounter character, done
-                lookahead.add(production_item.name)
+                lookahead.add(ParseToken.terminal(production_item.name))
                 break
             else:                                   # encounter expression, union its first set
                 first_set = self.__first_set_table[production_item.name]
-                lookahead.update(first_set)
+                lookahead.update(map(lambda x: ParseToken.terminal(x), filter(lambda x: x != PARSER_EPSILON, first_set)))
 
                 if PARSER_EPSILON not in first_set: # no epsilon found, done
                     break
 
         if pos == item.max_pos:                 # the calculation reaches the end, union A's lookahead set
             lookahead.update(item.lookahead)
-
-        lookahead.discard(PARSER_EPSILON)        # you know empty character shall not be here
 
         return frozenset(lookahead)
 
@@ -186,8 +182,6 @@ class LR1Parser:
 
                 item_translation_table[(item_set, edge)].update(result)
 
-
-
             for item in item_set:
                 if item.is_end():
                     continue
@@ -220,7 +214,7 @@ class LR1Parser:
         for reduce_item in reduce_set:
             production_id = self.production_id_table[reduce_item.production]
             for c in reduce_item.lookahead:
-                if reduce_item.production.name == self.__init_expression and c == PARSER_END:
+                if reduce_item.production.name == self.__init_expression and c.end:
                     action_goto_table[(src_state, PARSER_END)] = LRTableCell(ParserType.ACCEPT, production_id)
                 else:
                     action_goto_table[(src_state, c)] = LRTableCell(ParserType.REDUCE, production_id)
@@ -236,9 +230,9 @@ class LR1Parser:
         src_reduce_set = list(filter(lambda x: x.is_end(), src_item_set))
 
         if not item.is_terminated:
-            action_goto_table[(src_state, item.name)] = LRTableCell(ParserType.GOTO, dest_state)
+            action_goto_table[(src_state, ParseToken.terminal(item.name))] = LRTableCell(ParserType.GOTO, dest_state)
         else:
-            action_goto_table[(src_state, item.name)] = LRTableCell(ParserType.SHIFT, dest_state)
+            action_goto_table[(src_state, ParseToken.terminal(item.name))] = LRTableCell(ParserType.SHIFT, dest_state)
 
         self.__handle_reduce(src_reduce_set, src_state, action_goto_table)
         self.__handle_reduce(reduce_set, dest_state, action_goto_table)

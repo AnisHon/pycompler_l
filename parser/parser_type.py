@@ -9,7 +9,24 @@ from typing import Iterator
 ExpressionType = tuple[tuple['ProductionItem', ...], ...]
 PARSER_EPSILON = tuple()
 PARSER_EMPTY_CHAR = PARSER_EPSILON
-PARSER_END = "$$$"
+
+
+@dataclass(frozen=True)
+class ParseToken:
+    value: str
+    end: bool
+
+    @staticmethod
+    def terminal(value: str) -> 'ParseToken':
+        return ParseToken(value, False)
+
+    def __str__(self):
+        return self.value
+
+    def __repr__(self):
+        return self.value
+
+PARSER_END = ParseToken("$$$", end=True)
 
 @dataclass(frozen=True)
 class ProductionItem:
@@ -90,7 +107,7 @@ class Production:
     def __eq__(self, other):
         if type(self) is not type(other):
             return False
-        return self.name == other.name
+        return self.name == other.name and self.expression == self.expression
 
     def __hash__(self):
         return hash((self.name, self.expression))
@@ -149,7 +166,7 @@ class LR1Item:
     """
     production: Production
     position: int                       # dot position
-    lookahead: frozenset[str] | None    # 展望串
+    lookahead: frozenset[ParseToken] | None    # 展望串
 
     @property
     def size(self):
