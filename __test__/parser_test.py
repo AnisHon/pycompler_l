@@ -62,7 +62,6 @@ class TestParser(unittest.TestCase):
         for (src, edge), dest in lr1_parser.action_goto_table.items():
             if dest.cell_type == ParserType.REDUCE or dest.cell_type == ParserType.ACCEPT:
                 continue
-
-            fa_graph.edge(str(src), str(dest.value), edge)
+            fa_graph.edge(str(src), str(dest.value), str(edge))
 
         fa_graph.render(view=True, cleanup=True)
