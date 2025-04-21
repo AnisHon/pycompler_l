@@ -256,6 +256,9 @@ class LR1Parser:
 
         action_goto_table: dict[tuple[int, str], LRTableCell] = self.__build_lr1_table(item_translation_table, state_table)
 
+        for i in action_goto_table:
+            print(type(i[1]))
+
         return action_goto_table
 
 
