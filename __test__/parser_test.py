@@ -18,7 +18,7 @@ class TestParser(unittest.TestCase):
         # ])
         production = ProductionBuilder([
             ("S'", ("S", ), ("", )),
-            ("S", ("BB", ), ("", )),
+            ("S", ("BB", ), ("", "")),
             ("B", ("aB", 'b'), ("", "")),
         ], ['a', 'b'])
 

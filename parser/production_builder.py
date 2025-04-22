@@ -39,8 +39,10 @@ class ProductionBuilder:
 
         productions = []
         for name, expressions, attr_grammar in self.__expressions:
+            if not isinstance(attr_grammar, tuple):
+                raise RuntimeError(f"Attribute grammar must be a tuple: {attr_grammar}")
             if len(expressions) != len(attr_grammar):
-                raise RuntimeError(f"size not match, {expressions} {attr_grammar}")
+                raise RuntimeError(f"size not match, ({name}, {expressions}, {attr_grammar})")
             tokens = []
 
             for expr in expressions:
