@@ -1173,23 +1173,6 @@ class DFAOptimizer:
 
         raise RuntimeError("No new origin found")
 
-
-    # def __reduce_edge(self, connect_table: dict):         # maybe next time
-    #     origin_edges = {}
-    #     for origin, edge in connect_table:
-    #         edge_set = origin_edges.get(origin, set())
-    #         edge_set.add(edge)
-    #         origin_edges[origin] = edge_set
-    #
-    #     same = None
-    #     for edge_set in origin_edges.values():
-    #         if same is None:
-    #             same = edge_set
-    #         else:
-    #             same = same & edge_set
-
-
-
     def __check_block_consistency(self, block: frozenset[int], state_block_table: dict) -> None:
         """
         检查一个 block 内部状态在所有符号上的转移是否一致。

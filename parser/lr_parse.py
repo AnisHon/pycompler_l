@@ -68,7 +68,7 @@ class LR1Parser:
 
         return production_id_table, id_production_table
 
-    def __compute_lookahead(self, item) -> frozenset[ParseToken]:
+    def _compute_lookahead(self, item) -> frozenset[ParseToken]:
         """
         calculate lookahead for the next item,
         for example, A -> a·BC... than this function will calculate lookahead for B
@@ -102,11 +102,11 @@ class LR1Parser:
 
         return frozenset(lookahead)
 
-    def __build_closure_item(self, from_item: LRItem, to_production: str, production_table):
+    def _build_closure_item(self, from_item: LRItem, to_production: str, production_table):
         productions: set[Production] = production_table[to_production]
         result: set[LRItem] = set()
 
-        lookahead_set = self.__compute_lookahead(from_item)
+        lookahead_set = self._compute_lookahead(from_item)
 
         for production in productions:
             for lookahead in lookahead_set:
@@ -125,9 +125,6 @@ class LR1Parser:
         while item_stack:
             item = item_stack.pop()
 
-            if item in result_set:
-                continue
-
             result_set.add(item)
 
             if item.is_end():
@@ -138,8 +135,11 @@ class LR1Parser:
             if production_item.is_terminated:
                 continue
 
-            closure_set = self.__build_closure_item(item, production_item.name, production_table)
-            item_stack.extend(closure_set)
+            closure_set = self._build_closure_item(item, production_item.name, production_table)
+
+            for closure_item in closure_set:
+                if closure_item not in result_set:
+                    item_stack.append(closure_item)
 
         return result_set
 
@@ -327,14 +327,64 @@ class LR1Parser:
         action_goto_table: dict[tuple[int, str], LRTableCell] = self.__build_lr1_table(transition_table, state2collection_table)
         return action_goto_table
 
-class Lalr1Parser(LR1Parser):
+class LAlR1Parser(LR1Parser):
 
     def __init__(self, productions: list[Production], init_expr: str):
         super().__init__(productions, init_expr)
 
-    def _build_item_collection(self, production_table: dict[str, set[Production]], closure_table) -> set[frozenset[LRItem]]:
-        item_collection = super()._build_item_collection(production_table, closure_table)
+    @staticmethod
+    def __merge_inner(item_collection_set: set[frozenset[LRItem]]):
 
-        return item_collection
+        new_item_collection_set: set[frozenset[LRItem]] = set()
+        for item_collection in item_collection_set:
+            lookahead_table = defaultdict(set)
+
+            for item in item_collection:
+                lookahead_table[LRItem(item.production, item.position, None)].update(item.lookahead)
+
+            item_collection = set()
+            for item, lookahead_ in lookahead_table.items():
+                item_collection.add(LRItem(item.production, item.position, frozenset(lookahead_)))
+            new_item_collection_set.add(frozenset(item_collection))
+
+        return new_item_collection_set
+
+    @staticmethod
+    def __merge_core_equivalent(item_collection_set: set[frozenset[LRItem]]):
+        new_item_collection_set: set[frozenset[LRItem]] = set()
+        core_table = defaultdict(set)
+        for item_collection in item_collection_set:
+            core_set = set()
+            for item in item_collection:
+                core_set.add(LRItem(item.production, item.position, None))
+
+            core_table[frozenset(core_set)].update(item_collection)
+
+        for item_collection in core_table.values():
+            new_item_collection_set.add(frozenset(item_collection))
+
+        return new_item_collection_set
+
+    def _build_closure_item(self, from_item: LRItem, to_production: str, production_table):
+        productions: set[Production] = production_table[to_production]
+        result: set[LRItem] = set()
+
+        lookahead_set = self._compute_lookahead(from_item)
+        for production in productions:
+            result.add(LRItem(production, position=0, lookahead=lookahead_set))
+
+
+        return result
+
+    def _build_item_collection(self, production_table: dict[str, set[Production]], closure_table) -> set[frozenset[LRItem]]:
+        item_collection_set = super()._build_item_collection(production_table, closure_table)
+
+        item_collection_set = LAlR1Parser.__merge_core_equivalent(item_collection_set)
+        item_collection_set = LAlR1Parser.__merge_inner(item_collection_set)
+
+
+        # print(item_collection_set)
+
+        return item_collection_set
 
     pass

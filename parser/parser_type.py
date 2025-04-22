@@ -247,12 +247,12 @@ class LRItem:
         i = 0
         for i in range(self.size):
             if i == self.position:
-                item_str.append('•')                            # Bold dot U+2022
+                item_str.append('·')                            # Bold dot U+2022
             item_str.append(self.production.get(0, i).name)
 
 
         if i + 1 == self.position:
-            item_str.append('•')
+            item_str.append('·')
 
         if not self.lookahead:
             lookahead = ' '
