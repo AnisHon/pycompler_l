@@ -6,20 +6,29 @@ from parser.lr_parse import LR1Parser, ParserType
 from parser.production_builder import ProductionBuilder
 import pandas as pd
 
+from parser.util import compute_first_set
+
 
 class TestParser(unittest.TestCase):
     def test_parser(self):
+        # production = ProductionBuilder([
+        #     ("S'", ("L=R", "R")),
+        #     ("L", ("*R", "i")),
+        #     ("R", ("L", )),
+        # ])
         production = ProductionBuilder([
-            ("S", ("L=R", "R")),
-            ("L", ("*R", "i")),
-            ("R", ("L", )),
-        ])
+            ("S'", ("S", ), ("", )),
+            ("S", ("BB", ), ("", )),
+            ("B", ("aB", 'b'), ("", "")),
+        ], ['a', 'b'])
+
+        print(compute_first_set(production.parse()))
 
 
         print(production.parse())
 
-        lr1_parser = LR1Parser(production.parse(), "S")
-
+        lr1_parser = LR1Parser(production.parse(), "S'")
+        # return
 
         df = pd.DataFrame(
             [{"src": src, "edge": edge, "dest": dest} for (src, edge), dest in lr1_parser.action_goto_table.items()]
@@ -38,9 +47,7 @@ class TestParser(unittest.TestCase):
         fa_graph.attr(rankdir='LR', nodesep='0.5', ranksep='1.0')
         # fa_graph.attr('node', shape='circle', width='0.5')
 
-        state_table = {}
-        for k, v in lr1_parser.state_table.items():
-            state_table[v] = k
+        state_table = lr1_parser.state2collection_table
 
         node_table = {}
         for (src, edge), dest in lr1_parser.action_goto_table.items():
@@ -48,6 +55,9 @@ class TestParser(unittest.TestCase):
                 continue
             src_set = state_table[src]
             dest_set = state_table[dest.value]
+
+            src_set = sorted(src_set, key=lambda s: s.production, reverse=True)
+            dest_set = sorted(dest_set, key=lambda s: s.production, reverse=True)
 
             src_node = "\n".join(map(lambda x: str(x), src_set))
             dest_node = "\n".join(map(lambda x: str(x), dest_set))

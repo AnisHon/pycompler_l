@@ -3,7 +3,7 @@
 # @date: 2025/04/17
 # @description:
 import itertools
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Iterator
 
 ExpressionType = tuple[tuple['ProductionItem', ...], ...]
@@ -49,6 +49,11 @@ class ProductionItem:
             return False
         return self.name == other.name and self.is_terminated == other.is_terminated
 
+    def __gt__(self, other: object) -> bool:
+        if not isinstance(other, ProductionItem):
+            return False
+        return self.name > other.name
+
 @dataclass(frozen=True)
 class Production:
     """
@@ -57,6 +62,7 @@ class Production:
     name: str                                       # Production name (such as  'A' -> ...)
     expression: ExpressionType                      # Production expression (suck as A -> 'A | B')
     first_set: frozenset[str | tuple]               # First set
+    attribute_grammar: tuple[str, ...] = field(default_factory=tuple)
 
     @staticmethod
     def is_epsilon(x):
@@ -99,8 +105,13 @@ class Production:
         :return:
         """
         productions = []
-        for expr in self.expression:
-            productions.append(Production(self.name, (expr, ), self.first_set))
+        i = 0
+        while i < self.alternation_size:
+            expr = self.expression[i]
+            attr_grammar = '' if len(self.attribute_grammar) < i + 1 else self.attribute_grammar[i]
+            productions.append(Production(self.name, (expr, ), self.first_set, (attr_grammar, )))
+            i += 1
+
 
         return productions
 
@@ -138,6 +149,13 @@ class Production:
             first.add('ε')
         return f"{self.__str__()} {first}"
 
+    def __gt__(self, other):
+        if type(self) is not type(other):
+            return False
+        if self.name == other.name:
+            return self.expression > self.expression
+        return self.name > other.name
+
 @dataclass(frozen=False)
 class WeakProduction:
     """
@@ -159,7 +177,7 @@ class WeakProduction:
 
 
 @dataclass(frozen=True)
-class LR1Item:
+class LRItem:
     """
     LR1 item, one lookahead char
     LR1 item require single production without alternatives
@@ -206,11 +224,11 @@ class LR1Item:
         except StopIteration:
             return None
 
-    def move_next(self) -> 'LR1Item':
+    def move_next(self) -> 'LRItem':
         if self.is_end():
             raise IndexError("This LR1Item have already ended")
 
-        return LR1Item(self.production, self.position + 1, self.lookahead)
+        return LRItem(self.production, self.position + 1, self.lookahead)
 
 
     def __hash__(self):
@@ -229,15 +247,22 @@ class LR1Item:
         i = 0
         for i in range(self.size):
             if i == self.position:
-                item_str.append('·')
+                item_str.append('•')                            # Bold dot U+2022
             item_str.append(self.production.get(0, i).name)
 
 
         if i + 1 == self.position:
-            item_str.append('·')
+            item_str.append('•')
 
-
-        return f"[{self.production.name} -> {' '.join(item_str)}, {set(self.lookahead)}]"
+        if not self.lookahead:
+            lookahead = ' '
+        elif len(self.lookahead) == 1:
+            lookahead = str(next(iter(self.lookahead)))
+        else:
+            lookahead = f"{{{','.join(map(lambda x: str(x), self.lookahead))}}}"
+        return f"[{self.production.name} -> {' '.join(item_str)}, {lookahead}]"
 
     def __repr__(self):
         return self.__str__()
+
+

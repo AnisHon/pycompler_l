@@ -7,10 +7,10 @@ from collections import defaultdict, deque
 from dataclasses import dataclass
 
 from common.IdGenerator import id_generator
-from parser.parser_type import Production, PARSER_END, LR1Item, PARSER_EPSILON, ProductionItem, ParseToken
+from parser.parser_type import Production, PARSER_END, LRItem, PARSER_EPSILON, ProductionItem, ParseToken
 from parser.util import compute_first_set
 
-LR1ItemSet = frozenset[LR1Item]
+LRItemSet = frozenset[LRItem]
 
 class ParserType(enum.Enum):
     REDUCE = enum.auto()
@@ -40,11 +40,15 @@ class LR1Parser:
         self.__productions = compute_first_set(productions)
         self.__init_expression = init_expr
 
-        self.__first_set_table: dict[str, frozenset[str | tuple]] = {production.name: production.first_set for production in productions}
+        self.__first_set_table: dict[str, frozenset[str | tuple]] = {production.name: production.first_set for production in self.__productions}
         self.production_id_table, self.id_production_table = self.__build_production_id_table()
         self.action_goto_table = self.__parse()
 
     def __build_production_table(self):
+        """
+        production name -> production alternatives table
+        :return:
+        """
         production_table = {production.name: production.split_alternative() for production in self.__productions}
         if self.__init_expression not in production_table:
             raise RuntimeError(f"The expression {self.__init_expression} is not defined.")
@@ -81,7 +85,7 @@ class LR1Parser:
 
         pos = item.position + 1                     # record position, in case the situation like A -> ...B·
         for production_item in item_iter:
-            pos += 1
+
             if production_item.is_terminated:       # encounter character, done
                 lookahead.add(ParseToken.terminal(production_item.name))
                 break
@@ -91,29 +95,32 @@ class LR1Parser:
 
                 if PARSER_EPSILON not in first_set: # no epsilon found, done
                     break
+            pos += 1
 
         if pos == item.max_pos:                 # the calculation reaches the end, union A's lookahead set
             lookahead.update(item.lookahead)
 
         return frozenset(lookahead)
 
-    def __build_closure_item(self, from_item: LR1Item, to_production: str, production_table):
+    def __build_closure_item(self, from_item: LRItem, to_production: str, production_table):
         productions: set[Production] = production_table[to_production]
-        result: set[LR1Item] = set()
+        result: set[LRItem] = set()
 
         lookahead_set = self.__compute_lookahead(from_item)
+
         for production in productions:
-            result.add(LR1Item(production, position=0,lookahead=lookahead_set))
+            for lookahead in lookahead_set:
+                result.add(LRItem(production, position=0, lookahead=frozenset([lookahead])))
 
         return result
 
-    def __item_closure(self, item: LR1Item, production_table):
+    def __item_closure(self, item: LRItem, production_table):
         """
         just like nfa epsilon closure: A->·B...  =>   B->·...
         :return:
         """
         item_stack = [item]
-        result_set:set[LR1Item] = set()
+        result_set:set[LRItem] = set()
 
         while item_stack:
             item = item_stack.pop()
@@ -136,77 +143,125 @@ class LR1Parser:
 
         return result_set
 
-    def __item_go(self, item: LR1Item, production_table) -> tuple[ProductionItem | None, LR1ItemSet]:
-        result_set:set[LR1Item] = set()
-        if item.is_end():
-            return None, frozenset(result_set)
-
-        production_item = item.get_next()
-
-        next_lr1_items = self.__item_closure(item.move_next(), production_table)
-
-        result_set.update(next_lr1_items)
-
-
-        return production_item, frozenset(result_set)
-
-    def __initialize_deque(self, production_table: dict[str, set[Production]]) -> deque[LR1ItemSet]:
+    def __init_production_item(self, production_table):
+        """
+        build init_expr production Item
+        :param production_table:
+        :return:
+        """
         init_productions = production_table[self.__init_expression]
-        items_queue: deque[LR1ItemSet] = deque()
+        return [LRItem(item, 0, frozenset([PARSER_END])) for item in init_productions]
+
+    def __initialize_deque(self, production_table: dict[str, set[Production]]) -> deque[LRItemSet]:
+        items_queue: deque[LRItemSet] = deque()
         initial_group = set()
-        for item in init_productions:
-            initial_group.update(self.__item_closure(LR1Item(item, 0, frozenset([PARSER_END])), production_table))
+        for item in self.__init_production_item(production_table):
+            initial_group.update(self.__item_closure(item, production_table))
 
         items_queue.append(frozenset(initial_group))
         return items_queue
 
-    def __build_production_item(self) -> dict[tuple[LR1ItemSet, ProductionItem], set[LR1Item]]:
-        production_table: dict[str, set[Production]] = self.__build_production_table()
-        items_queue: deque[LR1ItemSet] = self.__initialize_deque(production_table)
-
-        item_translation_table: dict[tuple[LR1ItemSet, ProductionItem], set[LR1Item]] = defaultdict(set)
-
-        visited = set()
-
-        while items_queue:
-            item_set: LR1ItemSet = items_queue.popleft()
-            if item_set in visited:
-                continue
-            visited.add(item_set)
-
-            for item in item_set:
-                if item.is_end():
-                    continue
-
-                edge, result = self.__item_go(item, production_table)
-
-                item_translation_table[(item_set, edge)].update(result)
-
-            for item in item_set:
-                if item.is_end():
-                    continue
-                production_item = item.get_next()
-                items_queue.append(frozenset(item_translation_table[(item_set, production_item)]))
-
-
-        return item_translation_table
 
     @staticmethod
-    def __build_state_table(item_translation_table: dict[tuple[LR1ItemSet, ProductionItem], set[LR1Item]]) -> dict[LR1ItemSet, int]:
-        state_table: dict[LR1ItemSet, int] = {}
+    def __group_by_edge(item_collection: LRItemSet) -> dict[ProductionItem, set[LRItem]]:
+        edge_items_table: dict[ProductionItem, set[LRItem]] = defaultdict(set)
+
+        for item in item_collection:
+            if item.is_end():
+                continue
+            edge_items_table[item.get_next()].add(item)
+
+        return edge_items_table
+
+    @staticmethod
+    def __goto(items, edge, closure_table) -> frozenset[LRItem]:
+        """
+        similar with DFAEdge + closure function in NFA, this function will move items next level
+        :param items: item collection (equals a state in DFA)
+        :param edge: transition edge (equals an edge in DFA)
+        :return: new items collection
+        """
+        result_set:set[LRItem] = set()
+
+        for item in items:
+            production_item = item.get_next()
+            if production_item != edge:
+                raise RuntimeError(f"Inconsistent edge expected {edge}, got {production_item}")
+
+
+            next_lr1_items = closure_table[item.move_next()]
+            result_set.update(next_lr1_items)
+
+        return frozenset(result_set)
+
+    def _build_item_collection(self, production_table: dict[str, set[Production]], closure_table) -> set[frozenset[LRItem]]:
+        """
+        build set of LR1 Canonical Collection
+        """
+        items_queue: deque[LRItemSet] = self.__initialize_deque(production_table)
+        item_groups: set[frozenset[LRItem]] = set()
+
+        while items_queue:
+            item_set: LRItemSet = items_queue.popleft()
+            item_groups.add(item_set)
+
+            for edge, items in LR1Parser.__group_by_edge(item_set).items():
+                next_lr1_items = LR1Parser.__goto(items, edge, closure_table)
+                if next_lr1_items not in item_groups:
+                    items_queue.append(next_lr1_items)
+
+        return item_groups
+
+    def __build_closure_table(self, production_table: dict[str, set[Production]]) -> dict[LRItem, set[LRItem]]:
+        """
+        LRItem -> frozenset[LRItem], cache closure result
+        """
+        item_queue: deque[LRItem] = deque()
+        item_queue.extend(self.__init_production_item(production_table))
+
+        closure_table: dict[LRItem, set[LRItem]] = {}
+
+        while item_queue:
+            item = item_queue.popleft()
+            closure_items = self.__item_closure(item, production_table)
+            closure_table[item] = closure_items
+
+            if not item.is_end():
+                item = item.move_next()
+
+                if item not in closure_table:
+                    item_queue.append(item)
+
+            for item in closure_items:
+                if item not in closure_table:
+                    item_queue.append(item)
+
+        return closure_table
+
+
+    @staticmethod
+    def __build_state_table(item_collection_set: set[LRItemSet]) -> dict[LRItemSet, int]:
         generator = id_generator()
-        visited = set()
-        for (item_set, item), dest_item_set in item_translation_table.items():
-            if item_set not in visited:
-                state_table[item_set] = next(generator)
-                visited.add(item_set)
+        return {item_collection: next(generator) for item_collection in item_collection_set}
 
-            dest_item_set = frozenset(dest_item_set)
-            if dest_item_set not in visited:
-                state_table[dest_item_set] = next(generator)
-                visited.add(dest_item_set)
+    @staticmethod
+    def __build_state2collection_table(state_table: dict[LRItemSet, int]) -> dict[int, LRItemSet]:
+        return {state: item_collection for item_collection, state in state_table.items()}
 
-        return state_table
+
+    def build_transition_table(self, state_table, closure_table):
+        """
+        get collection set transition table
+        """
+        transition_table: dict[tuple[int, ProductionItem], int] = {}
+        for item_collection, state in state_table.items():
+            for edge, items in self.__group_by_edge(item_collection).items():
+                dest_item_collection = LR1Parser.__goto(items, edge, closure_table)
+                dset = state_table[dest_item_collection]
+                transition_table[(state, edge)] = dset
+
+        return transition_table
+
 
     def __handle_reduce(self, reduce_set, src_state, action_goto_table):
         if len(reduce_set) == 0:
@@ -219,11 +274,13 @@ class LR1Parser:
                 else:
                     action_goto_table[(src_state, c)] = LRTableCell(ParserType.REDUCE, production_id)
 
-    def __table_type(self, src_item_set: frozenset[LR1Item], dest_item_set: frozenset[LR1Item], item: ProductionItem, state_table) -> dict:
-        src_state = state_table[src_item_set]
-        dest_state = state_table[dest_item_set]
+    def __table_cell(self, src_state: int, dest_state: int, item: ProductionItem, state_table) -> dict:
+        """
+        build LR1 table cell
+        """
+        src_item_set = state_table[src_state]
+        dest_item_set = state_table[dest_state]
         action_goto_table = {}
-
 
 
         reduce_set = list(filter(lambda x: x.is_end(), dest_item_set))
@@ -239,26 +296,45 @@ class LR1Parser:
 
         return action_goto_table
 
-    def __build_lr1_table(self, item_translation_table: dict[tuple[LR1ItemSet, ProductionItem], set[LR1Item]], state_table: dict[LR1ItemSet, int]):
-
+    def __build_lr1_table(self, item_translation_table: dict[tuple[int, ProductionItem], int], state2collection_table: dict[int, LRItemSet]):
+        """
+        get final lr1 table
+        :param item_translation_table: relation table same as dfa transition table
+        :param state2collection_table: state -> item collection
+        """
         action_goto_table: dict[tuple[int, str], LRTableCell] = {}
-        for (src_item_set, item), dest_item_set in item_translation_table.items():
-            for (src, edge), dest in self.__table_type(src_item_set, frozenset(dest_item_set), item, state_table).items():
+        for (src_state, item), dest_state in item_translation_table.items():
+            for (src, edge), dest in self.__table_cell(src_state, dest_state, item, state2collection_table).items():
                 action_goto_table[(src, edge)] = dest
         return action_goto_table
 
     def __parse(self):
-        item_translation_table = self.__build_production_item()
+        production_table = self.__build_production_table()          # name -> production alternatives set
 
-        state_table: dict[LR1ItemSet, int] = LR1Parser.__build_state_table(item_translation_table)
+        closure_table = self.__build_closure_table(production_table)    # cache closure (item -> frozenset[item])
 
-        self.state_table = state_table
+        item_collection_set = self._build_item_collection(production_table, closure_table)   # all item collection set
 
-        action_goto_table: dict[tuple[int, str], LRTableCell] = self.__build_lr1_table(item_translation_table, state_table)
+        state_table: dict[LRItemSet, int] = LR1Parser.__build_state_table(item_collection_set)    # item collection -> state
 
-        for i in action_goto_table:
-            print(type(i[1]))
+        state2collection_table = LR1Parser.__build_state2collection_table(state_table)          # state -> item collection
 
+        transition_table: dict[tuple[int, ProductionItem], int] = self.build_transition_table(state_table, closure_table)
+
+        self.state_table = state_table                              # for debug
+        self.state2collection_table = state2collection_table
+
+        action_goto_table: dict[tuple[int, str], LRTableCell] = self.__build_lr1_table(transition_table, state2collection_table)
         return action_goto_table
 
+class Lalr1Parser(LR1Parser):
 
+    def __init__(self, productions: list[Production], init_expr: str):
+        super().__init__(productions, init_expr)
+
+    def _build_item_collection(self, production_table: dict[str, set[Production]], closure_table) -> set[frozenset[LRItem]]:
+        item_collection = super()._build_item_collection(production_table, closure_table)
+
+        return item_collection
+
+    pass
