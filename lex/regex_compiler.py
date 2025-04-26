@@ -129,7 +129,7 @@ class RegexLexer:
     def __handle_escape(c: str):
         if c in {'d'}:
             return TokenType.ESCAPE
-        elif c in {'\\', '[', ']', '{', '}', "(", ")", '-', '.', '+', '?', '|', '*'}:
+        elif c in {'\\', '[', ']', '{', '}', "(", ")", '-', '.', '+', '?', '|', '*', '"', "'", "/"}:
             return TokenType.CHAR
         else:
             raise RuntimeError(f"Unknown escape character {c}")

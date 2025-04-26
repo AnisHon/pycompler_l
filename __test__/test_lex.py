@@ -2,14 +2,18 @@
 # @author: anishan
 # @date: 2025/04/10
 # @description: 测试用，屁用没有
+import pickle
+import time
 import unittest
 from tkinter.constants import DISABLED
 
 from graphviz import Digraph
 
 from common.common_type import EPSILON
+from common.range_map import RangeMap
 from lex.lexer import Lexer
 from common.replace_util import ReplaceUtil
+from lex.lexer_builder import CLexerBuilder, CLayeringLexerBuilder
 from lex.nfa import NFA
 from lex.regex_compiler import RegexCompiler, RegexLexer, TokenType, N2DConvertor, DFAOptimizer
 
@@ -103,6 +107,7 @@ def draw(com_fa, filename):
 
     fa_graph.render(view=True, cleanup=True)
 
+
 def print_recursive(tokens):
     for item in tokens:
         if item[0] == TokenType.CHAR_CLASS:
@@ -112,6 +117,8 @@ def print_recursive(tokens):
         else:
             print(item[1], end='')
 
+
+
 class TestRegexLex(unittest.TestCase):
     def test_parse(self):
         tokens = RegexLexer.parse_group([('abc', "a|b|c"), ('efg', 'efg'), ('hijk', '[h-k][hijk]*')])
@@ -119,7 +126,6 @@ class TestRegexLex(unittest.TestCase):
         # arr = [0, 1, 2, 3]
         # del arr[1:]
         # print()
-
 
 class TestLex(unittest.TestCase):
     def test_dfa(self):
@@ -173,3 +179,95 @@ class TestLex(unittest.TestCase):
             c = dfa.range_map.search(c).meta
             state = dfa.translate_to(state, c)
             print(state, dfa.nodes[state])
+
+
+
+
+    def test_builder(self):
+
+        c = CLexerBuilder()
+
+        with open("../resource/lex_dump", "rb+") as f:
+           c: CLexerBuilder = pickle.load(f)
+
+        dfa = c.lexer.dfa
+        print(dfa.nodes.__len__())
+        print(dfa.edges.__len__())
+        rm: RangeMap = c.lexer.dfa.range_map
+
+        state = c.lexer.origin
+        text_ = \
+        """
+        int main() {
+            int a, b, c;
+            a = b = c = 10;
+            a *= b + c * a;
+            printf("Hello World!");
+            return 0;
+        }
+        """
+        i = 0
+        last_pos = None
+        last_state = None
+        a = []
+        # text_ = "\"hello\";"
+        while i < len(text_):
+
+            item: str = text_[i]
+            print(item)
+            item = rm.search(item).meta
+            state = dfa.translate_to(state, item)
+
+            if state is None:
+                state = last_state
+                i = last_pos
+                node = dfa.nodes[state]
+                a.append(node.label)
+                state = c.lexer.origin
+
+                last_pos = None
+                last_state = None
+
+            node = dfa.nodes[state]
+
+            if node.accept:
+                last_pos = i
+                last_state = state
+
+            i += 1
+
+        a.append(dfa.nodes[state].label)
+
+        print(a)
+
+
+
+    def test_layering_builder(self):
+        before = time.time()
+        builder = CLayeringLexerBuilder()
+        edges = 0
+        nodes = 0
+
+        for k, v in builder.inner_dfa.items():
+            edges += v.dfa.edges.__len__()
+            nodes += v.dfa.nodes.__len__()
+            print(k, v.dfa.nodes.__len__(), v.dfa.edges.__len__())
+
+            b = []
+            def a(x, *_):
+                b.append(1)
+            v.dfa.range_map.dfs(dlr_handler = a )
+            print(b.__len__())
+            cnt = 0
+
+        lex = builder.inner_dfa["DFA_COMMENT"]
+        state = lex.origin
+
+        for i in "":
+            i = lex.dfa.range_map.search(i).meta
+            state = lex.dfa.translate_to(state, i)
+            print(lex.dfa.nodes[state])
+
+        after = time.time()
+        print((after - before) * 1000)
+        print(nodes, edges)

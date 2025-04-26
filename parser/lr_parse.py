@@ -114,7 +114,7 @@ class LR1Parser:
 
         return result
 
-    def __item_closure(self, item: LRItem, production_table):
+    def _item_closure(self, item: LRItem, production_table):
         """
         just like nfa epsilon closure: A->·B...  =>   B->·...
         :return:
@@ -156,14 +156,14 @@ class LR1Parser:
         items_queue: deque[LRItemSet] = deque()
         initial_group = set()
         for item in self.__init_production_item(production_table):
-            initial_group.update(self.__item_closure(item, production_table))
+            initial_group.update(self._item_closure(item, production_table))
 
         items_queue.append(frozenset(initial_group))
         return items_queue
 
 
     @staticmethod
-    def __group_by_edge(item_collection: LRItemSet) -> dict[ProductionItem, set[LRItem]]:
+    def _group_by_edge(item_collection: LRItemSet) -> dict[ProductionItem, set[LRItem]]:
         edge_items_table: dict[ProductionItem, set[LRItem]] = defaultdict(set)
 
         for item in item_collection:
@@ -174,7 +174,7 @@ class LR1Parser:
         return edge_items_table
 
     @staticmethod
-    def __goto(items, edge, closure_table) -> frozenset[LRItem]:
+    def _goto(items, edge, closure_table) -> frozenset[LRItem]:
         """
         similar with DFAEdge + closure function in NFA, this function will move items next level
         :param items: item collection (equals a state in DFA)
@@ -205,8 +205,8 @@ class LR1Parser:
             item_set: LRItemSet = items_queue.popleft()
             item_groups.add(item_set)
 
-            for edge, items in LR1Parser.__group_by_edge(item_set).items():
-                next_lr1_items = LR1Parser.__goto(items, edge, closure_table)
+            for edge, items in LR1Parser._group_by_edge(item_set).items():
+                next_lr1_items = LR1Parser._goto(items, edge, closure_table)
                 if next_lr1_items not in item_groups:
                     items_queue.append(next_lr1_items)
 
@@ -223,7 +223,7 @@ class LR1Parser:
 
         while item_queue:
             item = item_queue.popleft()
-            closure_items = self.__item_closure(item, production_table)
+            closure_items = self._item_closure(item, production_table)
             closure_table[item] = closure_items
 
             if not item.is_end():
@@ -249,14 +249,14 @@ class LR1Parser:
         return {state: item_collection for item_collection, state in state_table.items()}
 
 
-    def build_transition_table(self, state_table, closure_table):
+    def _build_transition_table(self, state_table, closure_table):
         """
         get collection set transition table
         """
         transition_table: dict[tuple[int, ProductionItem], int] = {}
         for item_collection, state in state_table.items():
-            for edge, items in self.__group_by_edge(item_collection).items():
-                dest_item_collection = LR1Parser.__goto(items, edge, closure_table)
+            for edge, items in self._group_by_edge(item_collection).items():
+                dest_item_collection = LR1Parser._goto(items, edge, closure_table)
                 dset = state_table[dest_item_collection]
                 transition_table[(state, edge)] = dset
 
@@ -319,7 +319,7 @@ class LR1Parser:
 
         state2collection_table = LR1Parser.__build_state2collection_table(state_table)          # state -> item collection
 
-        transition_table: dict[tuple[int, ProductionItem], int] = self.build_transition_table(state_table, closure_table)
+        transition_table: dict[tuple[int, ProductionItem], int] = self._build_transition_table(state_table, closure_table)
 
         self.state_table = state_table                              # for debug
         self.state2collection_table = state2collection_table
@@ -333,21 +333,17 @@ class LAlR1Parser(LR1Parser):
         super().__init__(productions, init_expr)
 
     @staticmethod
-    def __merge_inner(item_collection_set: set[frozenset[LRItem]]):
+    def __merge(item_collection: frozenset[LRItem]):
+        lookahead_table = defaultdict(set)
+        for item in item_collection:
+            lookahead_table[LRItem(item.production, item.position, None)].update(item.lookahead)
 
-        new_item_collection_set: set[frozenset[LRItem]] = set()
-        for item_collection in item_collection_set:
-            lookahead_table = defaultdict(set)
+        item_collection = set()
+        for item, lookahead_ in lookahead_table.items():
+            item_collection.add(LRItem(item.production, item.position, frozenset(lookahead_)))
 
-            for item in item_collection:
-                lookahead_table[LRItem(item.production, item.position, None)].update(item.lookahead)
 
-            item_collection = set()
-            for item, lookahead_ in lookahead_table.items():
-                item_collection.add(LRItem(item.production, item.position, frozenset(lookahead_)))
-            new_item_collection_set.add(frozenset(item_collection))
-
-        return new_item_collection_set
+        return frozenset(item_collection)
 
     @staticmethod
     def __merge_core_equivalent(item_collection_set: set[frozenset[LRItem]]):
@@ -376,14 +372,33 @@ class LAlR1Parser(LR1Parser):
 
         return result
 
+    def __refresh_closure_table(self, production_table, item_collection_set, closure_table):
+        for item_collection in item_collection_set:
+            for item in item_collection:
+                closure_items = self._item_closure(item, production_table)
+                closure_table[item] = closure_items
+
+    def _build_transition_table(self, state_table, closure_table):
+        """
+        get collection set transition table
+        """
+        transition_table: dict[tuple[int, ProductionItem], int] = {}
+        for item_collection, state in state_table.items():
+            for edge, items in self._group_by_edge(item_collection).items():
+                dest_item_collection = LR1Parser._goto(items, edge, closure_table)
+                dest_item_collection = LAlR1Parser.__merge(dest_item_collection)
+                dset = state_table[dest_item_collection]
+                transition_table[(state, edge)] = dset
+
+        return transition_table
+
     def _build_item_collection(self, production_table: dict[str, set[Production]], closure_table) -> set[frozenset[LRItem]]:
         item_collection_set = super()._build_item_collection(production_table, closure_table)
 
         item_collection_set = LAlR1Parser.__merge_core_equivalent(item_collection_set)
         item_collection_set = LAlR1Parser.__merge_inner(item_collection_set)
 
-
-        # print(item_collection_set)
+        self.__refresh_closure_table(production_table, item_collection_set, closure_table)
 
         return item_collection_set
 
