@@ -19,6 +19,11 @@ class ProductionBuilder:
             group_by_name[name].add(expression)
 
     def __init__(self, expressions: list[tuple[str, tuple[str, ...], tuple[str, ...]]], token: list[str]):
+        """
+        expression name,  expression alternatives, attributive grammar
+        :param expressions:
+        :param token:
+        """
         self.__token = set(token)
         self.__expression_name = list(map(lambda x: x[0], expressions))
         self.__expressions = expressions

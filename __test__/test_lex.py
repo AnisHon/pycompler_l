@@ -17,8 +17,8 @@ from lex.lexer_builder import CLexerBuilder, CLayeringLexerBuilder
 from lex.nfa import NFA
 from lex.regex_compiler import RegexCompiler, RegexLexer, TokenType, N2DConvertor, DFAOptimizer
 
-# pattern = "([我-是]|苏联|[内务部])部长*贝利亚，废物贝利亚?"
-pattern = "[a-zA-Z0-9_-]+@[a-zA-Z0-9_-]+[\.a-zA-Z0-9_-]+"
+pattern = "([我-是]|苏联|[内务部])部长*贝利亚，废物贝利亚?"
+# pattern = "[a-zA-Z0-9_-]+@[a-zA-Z0-9_-]+[\.a-zA-Z0-9_-]+"
 # pattern = "\.[0-9]+"
 
 label_convertor = ReplaceUtil() \
@@ -131,12 +131,9 @@ class TestLex(unittest.TestCase):
     def test_dfa(self):
         compiler = RegexCompiler()
 
-        # tokens_entries, rm = RegexLexer.parse_group([("abc", "abc"), ("abcd", "abcd?")])
-        groups, rm = RegexLexer.parse(r"if|else|int|long|double|([^0-9][a-zA-Z]+[0-9a-zA-Z]+)")
-        beg, nfa, end = compiler.compile(groups, rm)
-
-
-        # draw((beg, nfa), "nfa")
+        groups, rm = RegexLexer.parse_group([("int", "int"), ("number", "(0[xX])?[0-9]H?")])
+        # groups, rm = RegexLexer.parse(r"if|else|int|long|double|([^0-9][a-zA-Z]+[0-9a-zA-Z]+)")
+        beg, nfa = compiler.compile_group(groups, rm)
 
         cvt = N2DConvertor(nfa, beg, enable_multi_label=True)
 
@@ -144,18 +141,18 @@ class TestLex(unittest.TestCase):
         # print(dfa.nodes)
         # draw((origin, dfa), "dfa_")
 
-        opt = DFAOptimizer(dfa=dfa, origin=origin, label_type=DISABLED)
+        opt = DFAOptimizer(dfa=dfa, origin=origin)
 
         origin, dfa = opt.optimize()
 
 
-        # draw((origin, dfa), "dfa")
+        draw((origin, dfa), "dfa")
         # print()
         state = origin
-        for c in "int":
-            c = rm.search(c).meta
-            state = dfa.translate_to(state, c)
-            print(dfa.nodes[state])
+        # for c in "int":
+        #     c = rm.search(c).meta
+        #     state = dfa.translate_to(state, c)
+        #     print(dfa.nodes[state])
 
 
         # state = origin

@@ -6,7 +6,8 @@ from parser.lr_parse import LR1Parser, ParserType, LAlR1Parser
 from parser.production_builder import ProductionBuilder
 import pandas as pd
 
-from parser.util import compute_first_set
+from parser.util import compute_first_set, compute_follow_set
+
 
 def draw(state2collection_table, action_goto_table, filename: str):
     df = pd.DataFrame(
@@ -58,6 +59,19 @@ def draw(state2collection_table, action_goto_table, filename: str):
 
 
 class TestParser(unittest.TestCase):
+    def test_util(self):
+        production = ProductionBuilder([
+            ("S'", ("aS", ), ("", )),
+            ("S", ("bBBf", ), ("", )),
+            ("B", ("aB", 'b'), ("", "")),
+        ], ['a', 'b', 'f'])
+
+        productions = compute_first_set(production.parse())
+        print(productions)
+        print(compute_follow_set(productions, "S'"))
+
+
+
     def test_lr1_parser(self):
         # production = ProductionBuilder([
         #     ("S'", ("L=R", "R")),

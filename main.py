@@ -36,7 +36,7 @@ token_spec = [
     # 预处理指令
     # ('PREPROCESSOR', r'#.*'),
     # 错误处理
-    ('ERROR', r'.')
+    # ('ERROR', r'.')
 ]
 
 lex = Lexer(token_spec)
@@ -46,7 +46,31 @@ print(lex.dfa.edges.__len__())
 
 
 state = lex.origin
-for i in '"+ / * -你好世界 🖕️114514 \\"':
-    i = lex.dfa.range_map.search(i).meta
-    state = lex.dfa.translate_to(state, i)
-    print(lex.dfa.nodes[state])
+
+
+
+
+def match():
+    idx = 0
+    text = """
+    """
+
+    last_pos = 0
+    last_state = lex.origin
+
+    while idx < len(text):
+        s = lex.dfa.range_map.search().meta
+        state = lex.dfa.translate_to(state, s)
+        if lex.dfa.nodes[state].accept:
+            last_state = state
+            last_pos = idx
+
+
+
+
+
+
+
+
+
+
