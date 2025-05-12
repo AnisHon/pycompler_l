@@ -16,6 +16,7 @@ from common.replace_util import ReplaceUtil
 from lex.lexer_builder import CLexerBuilder, CLayeringLexerBuilder
 from lex.nfa import NFA
 from lex.regex_compiler import RegexCompiler, RegexLexer, TokenType, N2DConvertor, DFAOptimizer
+from parser.util import compute_alter_first_set
 
 pattern = "([我-是]|苏联|[内务部])部长*贝利亚，废物贝利亚?"
 # pattern = "[a-zA-Z0-9_-]+@[a-zA-Z0-9_-]+[\.a-zA-Z0-9_-]+"
@@ -268,3 +269,4 @@ class TestLex(unittest.TestCase):
         after = time.time()
         print((after - before) * 1000)
         print(nodes, edges)
+

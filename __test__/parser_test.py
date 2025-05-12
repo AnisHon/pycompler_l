@@ -2,11 +2,12 @@ import unittest
 
 from graphviz import Digraph
 
+from parser.ll_parse import LL1Parser
 from parser.lr_parse import LR1Parser, ParserType, LAlR1Parser
 from parser.production_builder import ProductionBuilder
 import pandas as pd
 
-from parser.util import compute_first_set, compute_follow_set
+from parser.util import compute_first_set, compute_alter_first_set, nullable, compute_follow_set
 
 
 def draw(state2collection_table, action_goto_table, filename: str):
@@ -60,15 +61,44 @@ def draw(state2collection_table, action_goto_table, filename: str):
 
 class TestParser(unittest.TestCase):
     def test_util(self):
+        # production = ProductionBuilder([
+        #     ("S", ("AB", "bC"), ("", "")),
+        #     ("A", ("b", ""), ("", "")),
+        #     ("B", ("b", ''), ("", "")),
+        #     ("C", ("AD", 'b'), ("", "")),
+        #     ("D", ("aS", 'c'), ("", "")),
+        # ], ['b', 'c', ])
         production = ProductionBuilder([
-            ("S'", ("aS", ), ("", )),
-            ("S", ("bBBf", ), ("", )),
-            ("B", ("aB", 'b'), ("", "")),
-        ], ['a', 'b', 'f'])
+            ("E", ("TE'", ), ("", )),
+            ("E'", ("ATE'", ""), ("", "")),
+            ("T", ("FT'", ), ("", )),
+            ("T'", ("MFT'", ""), ("", "")),
+            ("F", ("(E)", "i"), ("", "")),
+            ("A", ("+", "-"), ("", "")),
+            ("M", ("*", "/"), ("", "")),
 
-        productions = compute_first_set(production.parse())
-        print(productions)
-        print(compute_follow_set(productions, "S'"))
+        ], ['b', 'c', "(", ")", "+", "-", "*", "/", 'i'])
+
+        productions = production.parse()
+        first_set, first_productions = compute_alter_first_set(production.parse())
+        print(first_productions)
+        # print(compute_follow_set(first_productions, "E"))
+        # print(nullable(productions))
+        # print(first_set)
+        table = LL1Parser(productions, "E").result_table
+        df = pd.DataFrame(
+            [{"name": src, "char": edge, "expr": str(expr)} for (src, edge), expr in table.items()]
+        )
+        pd.set_option('display.max_columns', None)
+        pd.set_option('display.max_rows', None)
+        pd.set_option('display.max_colwidth', None)
+        pd.set_option('display.width', None)
+
+
+        # print(table)
+        adj_matrix = df.pivot(index="name", columns="char", values="expr").fillna("")
+
+        print(adj_matrix)
 
 
 

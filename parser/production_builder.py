@@ -24,7 +24,20 @@ class ProductionBuilder:
         :param expressions:
         :param token:
         """
+        escaped_char = {'+', '?', '(', ')', '{', '}', '.', '|', '[', ']', '*', '+', '\\'}
+        new_tokens = []
+        for tok in token:
+            new_tok = []
+            for c in tok:
+                if c in escaped_char:
+                    new_tok.append("\\")
+                new_tok.append(c)
+                # print(new_tok)
+            new_tok = "".join(new_tok)
+            new_tokens.append(new_tok)
+        token = new_tokens
         self.__token = set(token)
+        # print(self.__token)
         self.__expression_name = list(map(lambda x: x[0], expressions))
         self.__expressions = expressions
 
@@ -35,11 +48,11 @@ class ProductionBuilder:
 
     def __lexer(self) -> list[tuple[str, ExpressionType]]:
         token_specs = [
-            ("|".join(self.__expression_name), "E"),
+            ("|".join(sorted(self.__expression_name, key=len, reverse=True)), "E"),
             ("|".join(self.__token), "T"),
         ]
 
-        token_regex = "|".join(f"(?P<{name}>{pattern})" for pattern, name in token_specs if name)
+        token_regex = "|".join(f"(?P<{name}>{pattern})" for pattern, name in token_specs if pattern and name)
         token_pattern = re.compile(token_regex, re.VERBOSE)
 
         productions = []

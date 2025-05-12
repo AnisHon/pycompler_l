@@ -84,6 +84,8 @@ class Production:
 
         return first
 
+
+
     @property
     def alternation_size(self) -> int:
         return len(self.expression)
