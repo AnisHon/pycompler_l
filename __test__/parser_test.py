@@ -13,6 +13,11 @@ from parser.util import compute_first_set, compute_alter_first_set, nullable, co
 
 
 def draw(state2collection_table, action_goto_table, filename: str):
+
+    # for k, v in state2collection_table.items():
+    #     print(k, v)
+
+
     df = pd.DataFrame(
         [{"src": src, "edge": edge, "dest": dest} for (src, edge), dest in action_goto_table.items()]
     )
@@ -50,10 +55,13 @@ def draw(state2collection_table, action_goto_table, filename: str):
         node_table[dest.value] = dest_node
 
 
+
     for k, v in node_table.items():
+
         fa_graph.node(str(k), v, shape="box")
 
     for (src, edge), dest in action_goto_table.items():
+        print(src, edge, dest)
         if dest.cell_type == ParserType.REDUCE or dest.cell_type == ParserType.ACCEPT:
             continue
         fa_graph.edge(str(src), str(dest.value), str(edge))
@@ -111,17 +119,18 @@ class TestParser(unittest.TestCase):
         #     ("R", ("L", )),
         # ])
         production = ProductionBuilder([
-            ("S'", ("S", ), ("", )),
-            ("S", ("BB", ), ("", )),
-            ("B", ("aB", 'b'), ("", "")),
-        ], ['a', 'b'])
+            ("S", ("(A)", ), ("", )),
+            ("A", ("aB", "bB'", "SDB"), ("", "", "")),
+            ("B", (",AB", ""), ("", "")),
+            ("D", (",S", ""), ("", ""))
+        ], ['(', ',', ')', "a", "b"])
 
         print(compute_first_set(production.parse()))
 
 
         print(production.parse())
 
-        lr1_parser = LR1Parser(production.parse(), "S'")
+        lr1_parser = LR1Parser(production.parse(), "S")
 
         draw(lr1_parser.state2collection_table, lr1_parser.action_goto_table, "lr1_table")
 
@@ -152,11 +161,10 @@ class TestParser(unittest.TestCase):
             ("A", ("aB", "bB'", "SDB"), ("", "", "")),
             ("B", (",AB", ""), ("", "")),
             ("D", (",S", ""), ("", ""))
-            # ("B", (",S", ""), ("", "")),
         ], ['(', ',', ')', "a", "b"])
         productions = production.parse()
-        # rd_parser = RDParser("(a,(a),(b),(a,(b)))", productions , "S")
-        rd_parser = RDParser("(a,(a,b),(a,(b,a),(a,(b),b,a,((b)))))", productions , "S")
+        rd_parser = RDParser("(a,(a),(b),(a,(b)))", productions , "S")
+        # rd_parser = RDParser("(a,(a,b),(a,(b,a),(a,(b),b,a,((b)))))", productions , "S")
 
         graph = Digraph(
             filename="syntax_tree", format='png',

@@ -42,6 +42,7 @@ class LR1Parser:
 
         self.__first_set_table: dict[str, frozenset[str | tuple]] = {production.name: production.first_set for production in self.__productions}
         self.production_id_table, self.id_production_table = self.__build_production_id_table()
+
         self.action_goto_table = self.__parse()
 
     def __build_production_table(self):
@@ -154,11 +155,12 @@ class LR1Parser:
 
     def __initialize_deque(self, production_table: dict[str, set[Production]]) -> deque[LRItemSet]:
         items_queue: deque[LRItemSet] = deque()
-        initial_group = set()
-        for item in self.__init_production_item(production_table):
-            initial_group.update(self._item_closure(item, production_table))
 
-        items_queue.append(frozenset(initial_group))
+        for item in self.__init_production_item(production_table):
+            initial_group = set()
+            initial_group.update(self._item_closure(item, production_table))
+            items_queue.append(frozenset(initial_group))
+
         return items_queue
 
 

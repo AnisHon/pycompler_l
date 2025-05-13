@@ -36,13 +36,13 @@ class RDParser:
 
 
         elif production.expression[0] == PARSER_EPSILON:
-            tree = SyntaxNode(PARSER_EPSILON, [])
+            node = SyntaxNode(PARSER_EPSILON, [])
+            tree = SyntaxNode(ProductionItem(False, production.name), [node])
         else:
 
             flag = True
             children: list[SyntaxNode] = []
             for item in production.expression[0]:
-                c = self.__text[self.__idx]
                 temp_node = None
                 if item.is_terminated and item.name == self.__text[self.__idx]:
                     self.__move_forward()
