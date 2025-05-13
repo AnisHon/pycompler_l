@@ -4,9 +4,11 @@ from graphviz import Digraph
 
 from parser.ll_parse import LL1Parser
 from parser.lr_parse import LR1Parser, ParserType, LAlR1Parser
+from parser.parser_type import PARSER_EPSILON
 from parser.production_builder import ProductionBuilder
 import pandas as pd
 
+from parser.rd_parser import RDParser, SyntaxNode
 from parser.util import compute_first_set, compute_alter_first_set, nullable, compute_follow_set
 
 
@@ -143,4 +145,38 @@ class TestParser(unittest.TestCase):
         lr1_parser = LAlR1Parser(production.parse(), "S'")
 
         draw(lr1_parser.state2collection_table, lr1_parser.action_goto_table, "lalr1_table")
+
+    def test_rd_parser(self):
+        production = ProductionBuilder([
+            ("S", ("(A)", ), ("", )),
+            ("A", ("aB", "bB'", "SDB"), ("", "", "")),
+            ("B", (",AB", ""), ("", "")),
+            ("D", (",S", ""), ("", ""))
+            # ("B", (",S", ""), ("", "")),
+        ], ['(', ',', ')', "a", "b"])
+        productions = production.parse()
+        # rd_parser = RDParser("(a,(a),(b),(a,(b)))", productions , "S")
+        rd_parser = RDParser("(a,(a,b),(a,(b,a),(a,(b),b,a,((b)))))", productions , "S")
+
+        graph = Digraph(
+            filename="syntax_tree", format='png',
+            graph_attr={'fontname': 'SimHei'},
+            node_attr={'fontname': 'SimHei'},
+            edge_attr={'fontname': 'SimHei'}
+        )
+
+        def recursive(node: SyntaxNode):
+            name = node.name.name if node.name != PARSER_EPSILON else "ε"
+            graph.node(str(id(node)), name, shape="box")
+            for child in node.children:
+                recursive(child)
+                graph.edge(str(id(node)), str(id(child)))
+
+        tree = rd_parser.parse()
+        print(tree)
+        recursive(tree)
+
+        graph.render(view=True, cleanup=True)
+
+        print()
 
