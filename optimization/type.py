@@ -21,7 +21,7 @@ class QuadrupleOp(Enum):
     SUB = auto()        # v3 = v1 - v2
     MUL = auto()        # v3 = v1 * v2
     DIV = auto()        # v3 = v1 / v2
-    REM = auto()        # v3 = v1 % v2
+    MOD = auto()        # v3 = v1 % v2
 
     B_AND = auto()      # v3 = v1 & v2
     B_OR = auto()       # v3 = v1 | v2
@@ -45,6 +45,15 @@ class Operand:
     def is_const(self):
         return self.type != OperandType.VARIABLE
 
+    def __hash__(self):
+        return hash(self.value) + hash(self.type)
+
+    def __str__(self):
+        return str(self.value)
+
+    def __repr__(self):
+        return repr(self.value)
+
 @dataclass
 class Quadruple:
     op: QuadrupleOp
@@ -64,6 +73,16 @@ class Quadruple:
     def get_lvalue(self):
         return self.v3
 
+    @staticmethod
+    def __to_str(x):
+        return "_" if x is None else x.value
+
+    def __str__(self):
+        return f"({self.op}, {Quadruple.__to_str(self.v1)}, {Quadruple.__to_str(self.v2)}, {Quadruple.__to_str(self.v3)})"
+
+    def __repr__(self):
+        return self.__str__()
+
 quadrupleOpType = {
     QuadrupleOp.ASSIGN: QuadrupleOpType.NON_OPERATION,
 
@@ -74,7 +93,7 @@ quadrupleOpType = {
     QuadrupleOp.SUB: QuadrupleOpType.BINARY_OPERATION,
     QuadrupleOp.MUL: QuadrupleOpType.BINARY_OPERATION,
     QuadrupleOp.DIV: QuadrupleOpType.BINARY_OPERATION,
-    QuadrupleOp.REM: QuadrupleOpType.BINARY_OPERATION,
+    QuadrupleOp.MOD: QuadrupleOpType.BINARY_OPERATION,
     QuadrupleOp.B_AND: QuadrupleOpType.BINARY_OPERATION,
     QuadrupleOp.B_OR: QuadrupleOpType.BINARY_OPERATION,
     QuadrupleOp.B_XOR: QuadrupleOpType.BINARY_OPERATION,

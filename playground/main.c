@@ -14,6 +14,6 @@ int main() {
     scanf("%d", &n);
     hanoi(n, 'A', 'C', 'B');
     i +++;
-
+    abc我测
     return 0;
 }
