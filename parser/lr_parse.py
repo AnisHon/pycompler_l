@@ -6,6 +6,8 @@ import enum
 from collections import defaultdict, deque
 from dataclasses import dataclass
 
+from exceptiongroup import catch
+
 from common.IdGenerator import id_generator
 from parser.parser_type import Production, PARSER_END, LRItem, PARSER_EPSILON, ProductionItem, ParseToken
 from parser.util import compute_first_set
@@ -257,13 +259,35 @@ class LR1Parser:
         """
         transition_table: dict[tuple[int, ProductionItem], int] = {}
         for item_collection, state in state_table.items():
-            for edge, items in self._group_by_edge(item_collection).items():
+            for edge, items in LR1Parser._group_by_edge(item_collection).items():
                 dest_item_collection = LR1Parser._goto(items, edge, closure_table)
-                dset = state_table[dest_item_collection]
-                transition_table[(state, edge)] = dset
+                dest = state_table[dest_item_collection]
+                if len(dest_item_collection) == 10:
+                    print(state, edge, dest, dest_item_collection)
+                transition_table[(state, edge)] = dest
 
         return transition_table
 
+    @staticmethod
+    def __check_conflict(table, src, edge, action):
+        name_dict = {
+            ParserType.REDUCE: "Reduce",
+            ParserType.ACCEPT: "Reduce",
+            ParserType.GOTO: "Shift",
+            ParserType.SHIFT: "Shift",
+        }
+        if (src, edge) in table:
+
+            action1 = table[(src, edge)]
+            if action == action1:
+                return
+            typ_name = name_dict[action1.cell_type]
+            typ_name2 = name_dict[action.cell_type]
+
+            err_msg = f"{typ_name2} {typ_name} conflict detected! \n {action} {action1}"
+
+            err = RuntimeError(err_msg, action1, action)
+            raise err
 
     def __handle_reduce(self, reduce_set, src_state, action_goto_table):
         if len(reduce_set) == 0:
@@ -272,9 +296,16 @@ class LR1Parser:
             production_id = self.production_id_table[reduce_item.production]
             for c in reduce_item.lookahead:
                 if reduce_item.production.name == self.__init_expression and c.end:
-                    action_goto_table[(src_state, PARSER_END)] = LRTableCell(ParserType.ACCEPT, production_id)
+                    cell = LRTableCell(ParserType.ACCEPT, production_id)
+                    LR1Parser.__check_conflict(action_goto_table, src_state, PARSER_END, cell)
+                    action_goto_table[(src_state, PARSER_END)] = cell
+
+
                 else:
-                    action_goto_table[(src_state, c)] = LRTableCell(ParserType.REDUCE, production_id)
+                    cell = LRTableCell(ParserType.ACCEPT, production_id)
+                    LR1Parser.__check_conflict(action_goto_table, src_state, c, cell)
+                    action_goto_table[(src_state, c)] = cell
+
 
     def __table_cell(self, src_state: int, dest_state: int, item: ProductionItem, state_table) -> dict:
         """
@@ -288,11 +319,19 @@ class LR1Parser:
         reduce_set = list(filter(lambda x: x.is_end(), dest_item_set))
         src_reduce_set = list(filter(lambda x: x.is_end(), src_item_set))
 
+
         if not item.is_terminated:
             action_goto_table[(src_state, ParseToken.terminal(item.name))] = LRTableCell(ParserType.GOTO, dest_state)
         else:
             action_goto_table[(src_state, ParseToken.terminal(item.name))] = LRTableCell(ParserType.SHIFT, dest_state)
 
+        f = False
+        for k1, v1 in action_goto_table.items():
+            for k,v in state_table.items():
+                if v1.value == k and len(v) == 10:
+                    # print("ok")
+                    f = True
+                    print(action_goto_table)
         self.__handle_reduce(src_reduce_set, src_state, action_goto_table)
         self.__handle_reduce(reduce_set, dest_state, action_goto_table)
 
@@ -306,8 +345,12 @@ class LR1Parser:
         """
         action_goto_table: dict[tuple[int, str], LRTableCell] = {}
         for (src_state, item), dest_state in item_translation_table.items():
+
             for (src, edge), dest in self.__table_cell(src_state, dest_state, item, state2collection_table).items():
+                self.__check_conflict(action_goto_table, src, edge, dest)
                 action_goto_table[(src, edge)] = dest
+
+
         return action_goto_table
 
     def __parse(self):
@@ -323,6 +366,8 @@ class LR1Parser:
 
         transition_table: dict[tuple[int, ProductionItem], int] = self._build_transition_table(state_table, closure_table)
 
+        # for e in item_collection_set:
+        #     print(e)
         self.state_table = state_table                              # for debug
         self.state2collection_table = state2collection_table
 

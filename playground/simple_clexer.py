@@ -13,16 +13,16 @@ class Token:
         return f"[{self.line_num}]{self.kind}( {self.value.__repr__()} )"
 
     def __repr__(self):
-        return f"\"{self.__str__()}\""
+        return f"({self.kind}, {self.value}, {self.line_num})"
 
 # 定义词法规则（正则表达式）
 token_spec = [
     # 关键字（必须放在标识符前）
-    ('KEYWORD', r'int|float|char|if|else|while|return'),
+    ('KEYWORD', r'int|float|char|if|else|while|return|break|continue|do|for|void'),
     # 数字（整数/浮点数）
     ('NUMBER', r'[0-9]+\.[0-9]+|[0-9]+'),
     # 运算符和分隔符
-    ('OP', r'[+\-*/=<>!&|^%]'),
+    ('OP', r'[+\-*/=<>!&|^%]|>=|<=|!=|==|\+\+'),
     ('SEPARATOR', r'[(),;{}]'),
     # 标识符
     ('ID', r'[a-zA-Z_][A-Za-z0-9_]*'),
@@ -39,7 +39,7 @@ token_spec = [
     # ('ERROR', r'.')
 ]
 
-lex = Lexer(token_spec)
+
 
 # print(len(lex.dfa.nodes))
 # print(lex.dfa.edges.__len__())
@@ -52,6 +52,9 @@ lex = Lexer(token_spec)
 
 
 def match(text: str):
+    lex = Lexer(token_spec)
+    # print(len(lex.dfa.nodes))
+    # print(lex.dfa.edges.__len__())
     line_num = 0
     idx = 0
 
@@ -116,4 +119,5 @@ with open("main.c", mode="r+", encoding="utf-8") as f:
     tokens = filter(lambda t: t.kind != 'WHITESPACE', tokens)
 
     for token in tokens:
-        print(token)
+        # print(token)
+        print(token.__repr__(), end="\t")

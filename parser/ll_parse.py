@@ -5,7 +5,6 @@ from parser.util import compute_alter_first_set, compute_follow_set, nullable
 class LL1Parser:
 
 
-
     def __init__(self, productions: list[Production], init_expr: str):
         self.productions = productions
         self.init_expr = init_expr

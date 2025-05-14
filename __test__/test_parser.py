@@ -15,8 +15,8 @@ from parser.util import compute_first_set, compute_alter_first_set, nullable, co
 def draw(state2collection_table, action_goto_table, filename: str):
 
     # for k, v in state2collection_table.items():
-    #     print(k, v)
-
+        # print(k, v)
+        # print(len(v))
 
     df = pd.DataFrame(
         [{"src": src, "edge": edge, "dest": dest} for (src, edge), dest in action_goto_table.items()]
@@ -61,16 +61,17 @@ def draw(state2collection_table, action_goto_table, filename: str):
         fa_graph.node(str(k), v, shape="box")
 
     for (src, edge), dest in action_goto_table.items():
-        print(src, edge, dest)
+        # print(src, edge, dest)
         if dest.cell_type == ParserType.REDUCE or dest.cell_type == ParserType.ACCEPT:
             continue
+
         fa_graph.edge(str(src), str(dest.value), str(edge))
 
     fa_graph.render(view=True, cleanup=True)
 
 
 class TestParser(unittest.TestCase):
-    def test_util(self):
+    def test_ll1(self):
         # production = ProductionBuilder([
         #     ("S", ("AB", "bC"), ("", "")),
         #     ("A", ("b", ""), ("", "")),
@@ -113,11 +114,11 @@ class TestParser(unittest.TestCase):
 
 
     def test_lr1_parser(self):
-        # production = ProductionBuilder([
-        #     ("S'", ("L=R", "R")),
-        #     ("L", ("*R", "i")),
-        #     ("R", ("L", )),
-        # ])
+        production = ProductionBuilder([
+            ("S'", ("L=R", "R"), ('', '')),
+            ("L", ("*R", "i"), ('', '')),
+            ("R", ("L", ), ('', )),
+        ], ['=', '*',])
         production = ProductionBuilder([
             ("S", ("(A)", ), ("", )),
             ("A", ("aB", "bB'", "SDB"), ("", "", "")),
