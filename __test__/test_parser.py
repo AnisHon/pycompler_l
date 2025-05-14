@@ -119,12 +119,12 @@ class TestParser(unittest.TestCase):
             ("L", ("*R", "i"), ('', '')),
             ("R", ("L", ), ('', )),
         ], ['=', '*',])
-        production = ProductionBuilder([
-            ("S", ("(A)", ), ("", )),
-            ("A", ("aB", "bB'", "SDB"), ("", "", "")),
-            ("B", (",AB", ""), ("", "")),
-            ("D", (",S", ""), ("", ""))
-        ], ['(', ',', ')', "a", "b"])
+        # production = ProductionBuilder([
+        #     ("S", ("(A)", ), ("", )),
+        #     ("A", ("aB", "bB'", "SDB"), ("", "", "")),
+        #     ("B", (",AB", ""), ("", "")),
+        #     ("D", (",S", ""), ("", ""))
+        # ], ['(', ',', ')', "a", "b"])
 
         print(compute_first_set(production.parse()))
 
