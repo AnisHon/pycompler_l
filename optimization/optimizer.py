@@ -24,7 +24,7 @@ class DAGNode:
     def rm_ref(self, operand: Operand):
         self.var_refs.discard(operand)
 
-class Optimizer:
+class LocalOptimizer:
 
     _CALC_MAP: dict[QuadrupleOp, Callable[[Quadruple], Operand]] = {
 
@@ -83,7 +83,7 @@ class Optimizer:
         operand = quadruple.get_unary_operand()
         result_operand = None
         if operand.is_const:
-            result_operand = Optimizer._CALC_MAP[quadruple.op](quadruple)
+            result_operand = LocalOptimizer._CALC_MAP[quadruple.op](quadruple)
 
         return self.__get_or_insert_ref(result_operand)
 
@@ -93,7 +93,7 @@ class Optimizer:
         result_operand = None
 
         if operand1.is_const and operand2.is_const:
-            result_operand = Optimizer._CALC_MAP[quadruple.op](quadruple)
+            result_operand = LocalOptimizer._CALC_MAP[quadruple.op](quadruple)
 
         return self.__get_or_insert_ref(result_operand)
 
@@ -173,8 +173,8 @@ class Optimizer:
         for quadruple in formulas:
             op = quadrupleOpType[quadruple.op]
             node = self.__build_node(quadruple)
-            node = Optimizer.__set_node(node, self.__handle_const(quadruple, op))
-            node = Optimizer.__set_node(node, self.__handle_const(quadruple, op))
+            node = LocalOptimizer.__set_node(node, self.__handle_const(quadruple, op))
+            node = LocalOptimizer.__set_node(node, self.__handle_const(quadruple, op))
 
             self.__handle_redundant(quadruple, node)
 
